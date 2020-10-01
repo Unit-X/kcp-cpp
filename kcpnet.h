@@ -22,25 +22,26 @@
 #include <unordered_map>
 #include <functional>
 
+//Optional context passed to the callbacks
+class KCPContext {
+public:
+    explicit KCPContext (uint64_t lKey) {
+        mKCPSocket = lKey;
+    }
+    std::any mObject = nullptr;         // For safe object lifecycles
+    void* mUnsafePointer = nullptr;     // Lightweight alternative for unsafe pointers
+    uint64_t mValue = 0;                // Generic 64-bit variable
+    uint64_t mKCPSocket = 0;
+};
+
 class KCPNetServer {
 public:
 
-    //Optional context passed to the callbacks
-    class KCPContext {
-    public:
-        explicit KCPContext (uint64_t lKey) {
-            mKCPSocket = lKey;
-        }
-        std::any mObject = nullptr;         // For safe object lifecycles
-        void* mUnsafePointer = nullptr;     // Lightweight alternative for unsafe pointers
-        uint64_t mValue = 0;                // Generic 64-bit variable
-        uint64_t mKCPSocket = 0;
-    };
-
     class KCPServerData {
     public:
-        KCPNetServer* mWeakParrent = nullptr;
+        KCPNetServer* mWeakKCPNetServer = nullptr;
         ikcpcb* mKCPServer = nullptr;
+        std::shared_ptr<KCPContext> mKCPContext = nullptr;
         kissnet::udp_socket mSocket;
     };
 
@@ -48,7 +49,7 @@ public:
 
     virtual ~KCPNetServer();
 
-    void sendData(const char* pData, size_t lSize, KCPContext* pCTX);
+    int sendData(const char* pData, size_t lSize, KCPContext* pCTX);
     //Method used by the bridge function
     void udpOutputServer(const char *pBuf, int lSize, KCPServerData* lCTX);
     ///Callback handling connecting clients
@@ -79,24 +80,14 @@ private:
 
 class KCPNetClient {
 public:
-
-    //Optional context passed to the callbacks
-    class KCPContext {
-    public:
-        std::any mObject = nullptr;         // For safe object lifecycles
-        void* mUnsafePointer = nullptr;     // Lightweight alternative for unsafe pointers
-        uint64_t mValue = 0;                // Generic 64-bit variable
-    };
-
     KCPNetClient(std::string lIP = "", uint16_t lport = 0, uint32_t lID = 0, std::shared_ptr<KCPContext> pCTX = nullptr);
 
     virtual ~KCPNetClient();
 
-    void sendData(const char* pData, size_t lSize);
+    int sendData(const char* pData, size_t lSize);
 
     ///Callback for getting data
-    std::function<void()> mGotDataClient;
-
+    std::function<void(const char * pData, size_t lSize, KCPContext* pCTX)> mGotDataClient;
 
     //Method used by the bridge function
     void udpOutputClient(const char *pBuf, int lSize);
