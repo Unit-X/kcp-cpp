@@ -32,6 +32,7 @@ add_dependencies(kcp project_kcp)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/kcp/)
 
 add_library(kcpnet STATIC kcpnet.cpp)
+target_link_libraries(kcpnet kcp)
 
 add_executable(kcp_cpp main.cpp)
-target_link_libraries(kcp_cpp kcp kcpnet)
+target_link_libraries(kcp_cpp kcpnet)
