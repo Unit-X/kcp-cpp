@@ -1,10 +1,44 @@
 # KCP - CPP
 
+![alt text](kcp_cpp_logo.png)
+
 *Simple C++ wrapper of the [KCP](https://github.com/skywind3000/kcp) protocol*.
 
-This wrapper is WIP..
+Work in progress
 
-Please chack back later 
+## Build
+
+Requires cmake version >= **3.10** and **C++17**
+
+**Release:**
+
+```sh
+mkdir build
+cd build
+cmake -DCMAKE_BUILD_TYPE=Release ..
+cmake --build . --config Release
+```
+
+***Debug:***
+
+```sh
+mkdir build
+cd build
+cmake -DCMAKE_BUILD_TYPE=Debug ..
+cmake --build . --config Debug
+```
+
+##output 
+
+WIP
+
+## Current build status
+
+WIP
+
+## Usage
+
+WIP
 
 ## Credits
 
