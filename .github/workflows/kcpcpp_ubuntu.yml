@@ -1,4 +1,4 @@
-name: efp_base_ubuntu
+name: kcpcpp_ubuntu
 
 on:
   push:
