@@ -28,7 +28,13 @@ ExternalProject_Add(project_kcp
         INSTALL_COMMAND ""
         )
 add_library(kcp STATIC IMPORTED)
-set_property(TARGET kcp PROPERTY IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/kcp/libkcp.a)
+
+IF (WIN32)
+    set_property(TARGET kcp PROPERTY IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/kcp/${CMAKE_BUILD_TYPE}/kcp.lib)
+ELSE()
+    set_property(TARGET kcp PROPERTY IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/kcp/libkcp.a)
+ENDIF()
+
 add_dependencies(kcp project_kcp)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/kcp/)
 

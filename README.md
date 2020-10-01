@@ -34,7 +34,12 @@ WIP
 
 ## Current build status
 
-WIP
+![kcpcpp_ubuntu](https://github.com/Unit-X/kcp-cpp/workflows/kcpcpp_ubuntu/badge.svg)
+
+![kcpcpp_macos](https://github.com/Unit-X/kcp-cpp/workflows/kcpcpp_macos/badge.svg)
+
+![kcpcpp_win](https://github.com/Unit-X/kcp-cpp/workflows/kcpcpp_win/badge.svg)
+
 
 ## Usage
 
