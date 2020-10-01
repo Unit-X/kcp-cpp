@@ -1,0 +1,19 @@
+name: kcpcpp_win
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: CMake set-up
+      run: cmake --config Release .
+    - name: make
+      run: cmake --build . --config Release
