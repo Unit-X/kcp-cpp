@@ -1,7 +1,8 @@
-cmake_minimum_required(VERSION 3.17)
+cmake_minimum_required(VERSION 3.10)
 project(kcp_cpp)
 
 set(CMAKE_CXX_STANDARD 17)
+find_package (Threads REQUIRED)
 
 #If no build type is set then force Release
 IF( NOT CMAKE_BUILD_TYPE )
@@ -32,7 +33,7 @@ add_dependencies(kcp project_kcp)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/kcp/)
 
 add_library(kcpnet STATIC kcpnet.cpp)
-target_link_libraries(kcpnet kcp)
+target_link_libraries(kcpnet kcp Threads::Threads)
 
 add_executable(kcp_cpp main.cpp)
-target_link_libraries(kcp_cpp kcpnet)
+target_link_libraries(kcp_cpp kcpnet Threads::Threads)

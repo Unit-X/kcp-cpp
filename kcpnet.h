@@ -20,6 +20,7 @@
 #include <any>
 #include <thread>
 #include <unordered_map>
+#include <functional>
 
 class KCPNetServer {
 public:
