@@ -2,6 +2,8 @@
 // Created by Anders Cedronius on 2020-09-30.
 //
 
+//TODO Disconnect, locks for thread safety, documentation, unit tests.
+
 #include "kcpnet.h"
 #include "kcplogger.h"
 #include <stdexcept>
@@ -96,6 +98,21 @@ KCPNetClient::~KCPNetClient() {
 
 int KCPNetClient::sendData(const char* pData, size_t lSize) {
     return ikcp_send(mKCP, pData, lSize);
+}
+
+int KCPNetClient::configureKCP(KCPSettings &rSettings) {
+    int lResult = 0;
+    lResult = ikcp_nodelay(mKCP, rSettings.mNodelay, rSettings.mInterval, rSettings.mResend, rSettings.mFlow);
+    if (lResult) {
+        KCP_LOGGER(false,LOGG_ERROR,"ikcp_nodelay client failed.")
+        return lResult;
+    }
+    lResult = ikcp_setmtu(mKCP, rSettings.mMtu);
+    if (lResult) {
+        KCP_LOGGER(false,LOGG_ERROR,"ikcp_setmtu client failed.")
+        return lResult;
+    }
+    return lResult;
 }
 
 void KCPNetClient::kcpNudgeWorkerClient() {
@@ -221,6 +238,25 @@ int KCPNetServer::sendData(const char* pData, size_t lSize, KCPContext* pCTX) {
     return lStatus;
 }
 
+int KCPNetServer::configureKCP(KCPSettings &rSettings, KCPContext* pCTX) {
+    int lResult = 0;
+    if (mKCPMap.count(pCTX->mKCPSocket)) {
+        lResult = ikcp_nodelay(mKCPMap[pCTX->mKCPSocket]->mKCPServer, rSettings.mNodelay, rSettings.mInterval, rSettings.mResend, rSettings.mFlow);
+        if (lResult) {
+            KCP_LOGGER(false,LOGG_ERROR,"ikcp_nodelay client failed.")
+            return lResult;
+        }
+        lResult = ikcp_setmtu(mKCPMap[pCTX->mKCPSocket]->mKCPServer, rSettings.mMtu);
+        if (lResult) {
+            KCP_LOGGER(false,LOGG_ERROR,"ikcp_setmtu client failed.")
+            return lResult;
+        }
+    } else {
+        KCP_LOGGER(false,LOGG_NOTIFY,"KCP Connection is unknown")
+    }
+    return lResult;
+}
+
 //For now the server is updating all connections every 10ms
 void KCPNetServer::kcpNudgeWorkerServer() {
     mNudgeThreadRunning = true;
@@ -266,8 +302,8 @@ void KCPNetServer::netWorkerServer() {
         if (!mKCPMap.count(lKey)) {
             KCP_LOGGER(false, LOGG_NOTIFY,"New server connection")
             std::shared_ptr<KCPContext> lx = std::make_shared<KCPContext>(lKey);
-            if (mClientConnected) {
-                auto lCTX = mClientConnected(lFromWho.address, lFromWho.port, lx);
+            if (mValidateConnectionCallback) {
+                auto lCTX = mValidateConnectionCallback(lFromWho.address, lFromWho.port, lx);
                 if (lCTX == nullptr) {
                     //The connection was not accepted
                     KCP_LOGGER(false, LOGG_NOTIFY,"Connection rejected")
@@ -278,7 +314,7 @@ void KCPNetServer::netWorkerServer() {
             auto lConnection = std::make_unique<KCPServerData>();
             lConnection->mKCPContext = lx;
             lConnection->mWeakKCPNetServer = this;
-            lConnection->mKCPServer = ikcp_create(10, lConnection.get());
+            lConnection->mKCPServer = ikcp_create(lx->mID, lConnection.get());
             if (!lConnection->mKCPServer) {
                 throw std::runtime_error("Failed creating KCP");
             }
@@ -286,6 +322,7 @@ void KCPNetServer::netWorkerServer() {
             kissnet::udp_socket lCreateSocket(kissnet::endpoint(lFromWho.address, lFromWho.port));
             lConnection->mSocket = std::move(lCreateSocket); //Move ownership to this/me
             mKCPMap[lKey] = std::move(lConnection);
+            configureKCP(lx->mSettings, lx.get());
             ikcp_input(mKCPMap[lKey]->mKCPServer,(const char *) receiveBuffer.data(), received_bytes);
             int lRcv = ikcp_recv(mKCPMap[lKey]->mKCPServer, &lBuffer[0], MAX_BYTES_RCV);
             if (lRcv > 0 && mGotDataServer) {

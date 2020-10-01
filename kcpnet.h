@@ -22,6 +22,15 @@
 #include <unordered_map>
 #include <functional>
 
+class KCPSettings {
+public:
+    bool mNodelay = false; //No delay mode. False: Off / True: On.
+    int mInterval = 100; //KCP update interval in ms
+    int mResend = 0; //Retransmit when missed mResend number ACK (Default value is 0)
+    bool mFlow = false; //Flow control, False: Off / True: On.
+    int mMtu = 1472; //Maximum payload in a single UDP datagram
+};
+
 //Optional context passed to the callbacks
 class KCPContext {
 public:
@@ -31,6 +40,8 @@ public:
     std::any mObject = nullptr;         // For safe object lifecycles
     void* mUnsafePointer = nullptr;     // Lightweight alternative for unsafe pointers
     uint64_t mValue = 0;                // Generic 64-bit variable
+    uint64_t mID = 10;                  //KCP ID to be used
+    KCPSettings mSettings;
     uint64_t mKCPSocket = 0;
 };
 
@@ -50,10 +61,11 @@ public:
     virtual ~KCPNetServer();
 
     int sendData(const char* pData, size_t lSize, KCPContext* pCTX);
+    int configureKCP(KCPSettings &rSettings, KCPContext* pCTX);
     //Method used by the bridge function
     void udpOutputServer(const char *pBuf, int lSize, KCPServerData* lCTX);
     ///Callback handling connecting clients
-    std::function<std::shared_ptr<KCPContext>(std::string lIP, uint16_t lPort, std::shared_ptr<KCPContext> &rpCtx)> mClientConnected = nullptr;
+    std::function<std::shared_ptr<KCPContext>(std::string lIP, uint16_t lPort, std::shared_ptr<KCPContext> &rpCtx)> mValidateConnectionCallback = nullptr;
 
     ///Callback for getting data
     std::function<void(const char * pData, size_t lSize, KCPContext* pCTX)> mGotDataServer;
@@ -85,6 +97,7 @@ public:
     virtual ~KCPNetClient();
 
     int sendData(const char* pData, size_t lSize);
+    int configureKCP(KCPSettings &rSettings);
 
     ///Callback for getting data
     std::function<void(const char * pData, size_t lSize, KCPContext* pCTX)> mGotDataClient;
