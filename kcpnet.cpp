@@ -127,6 +127,7 @@ void KCPNetClient::kcpNudgeWorkerClient() {
                 std::chrono::steady_clock::now().time_since_epoch()).count() - lTimeBase;
         ikcp_update(mKCP, lTimeNow);  //KCP should consider uint64_t as time interface
         lTimeSleep = ikcp_check(mKCP, lTimeNow) - lTimeNow;
+        //KCP_LOGGER(false, LOGG_NOTIFY,"dead client? " << mKCP->dead_link)
         //KCP_LOGGER(false, LOGG_NOTIFY,"k " << lTimeSleep << " " << lTimeNow)
     }
     KCP_LOGGER(false, LOGG_NOTIFY,"kcpNudgeWorkerClient quitting")
@@ -177,6 +178,7 @@ int udp_output_server(const char *pBuf, int lSize, ikcpcb *pKCP, void *pCTX)
 }
 
 void KCPNetServer::udpOutputServer(const char *pBuf, int lSize, KCPServerData* lCTX) {
+    if (mDropAll) return;
     auto[lSentBytes, lStatus] = lCTX->mSocket.send((const std::byte *) pBuf, lSize);
     if (lSentBytes != lSize || lStatus != kissnet::socket_status::valid) {
         KCP_LOGGER(false, LOGG_NOTIFY,"Server failed sending data")
@@ -268,11 +270,23 @@ void KCPNetServer::kcpNudgeWorkerServer() {
         std::this_thread::sleep_for(std::chrono::milliseconds(lTimeSleep));
         uint64_t lTimeNow = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now().time_since_epoch()).count() - lTimeBase;
+        uint32_t lTimeSleepLowest = UINT32_MAX;
         if (mKCPMap.size()) {
             for (const auto &rKCP: mKCPMap) {
                 ikcp_update(rKCP.second->mKCPServer, lTimeNow);
+                uint32_t lTimeSleepCandidate = ikcp_check(rKCP.second->mKCPServer, lTimeNow) - lTimeNow;
+                if (lTimeSleepCandidate < lTimeSleepLowest) {
+                    lTimeSleepLowest = lTimeSleepCandidate;
+                }
+                //KCP_LOGGER(false, LOGG_NOTIFY,"dead server? " << rKCP.second->mKCPServer->dead_link)
             }
         }
+        if (lTimeSleepLowest != UINT32_MAX) {
+            lTimeSleep = lTimeSleepLowest;
+        } else {
+            lTimeSleep = 10;
+        }
+
     }
     KCP_LOGGER(false, LOGG_NOTIFY,"kcpNudgeWorker quitting")
     mNudgeThreadRunning = false;

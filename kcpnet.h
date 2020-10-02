@@ -76,6 +76,8 @@ public:
     KCPNetServer &operator=(KCPNetServer const &) = delete;  // Copy assign
     KCPNetServer &operator=(KCPNetServer &&) = delete;      // Move assign
 
+    bool mDropAll = false;
+
 protected:
     std::shared_ptr<KCPContext> mCTX = nullptr;
 private:

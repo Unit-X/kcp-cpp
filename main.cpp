@@ -2,6 +2,7 @@
 
 #include "kcpnet.h"
 #include <vector>
+#include <algorithm>
 
 std::shared_ptr<KCPContext> gRetainThis;
 
@@ -59,5 +60,18 @@ int main() {
     std::this_thread::sleep_for(std::chrono::seconds (1));
     lKcpServer.sendData((const char*)lData.data(), 4000, gRetainThis.get());
     std::this_thread::sleep_for(std::chrono::seconds (1));
+
+    lKcpServer.mDropAll = true;
+
+    std::this_thread::sleep_for(std::chrono::seconds (1));
+    lKcpClient.sendData((const char*)lData.data(), 4000);
+    lKcpServer.sendData((const char*)lData.data(), 4000, gRetainThis.get());
+    std::this_thread::sleep_for(std::chrono::seconds (1));
+    lKcpClient.sendData((const char*)lData.data(), 4000);
+    lKcpServer.sendData((const char*)lData.data(), 4000, gRetainThis.get());
+    std::this_thread::sleep_for(std::chrono::seconds (10));
+    lKcpClient.sendData((const char*)lData.data(), 4000);
+    lKcpServer.sendData((const char*)lData.data(), 4000, gRetainThis.get());
+
     return 0;
 }
