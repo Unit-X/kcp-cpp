@@ -4,6 +4,8 @@
 
 *Simple C++ wrapper of the [KCP](https://github.com/skywind3000/kcp) protocol*.
 
+![alt text](kcp.svg)
+
 Work in progress
 
 ## Build

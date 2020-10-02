@@ -52,7 +52,7 @@ int main() {
 
     KCPSettings lSettingsClient;
     if(lKcpClient.configureKCP(lSettingsClient)) {
-        std::cout << "Failed configuring KCP Client" << std::endl;
+        std::cout << "Failed configuring the KCP Client" << std::endl;
     }
 
     lKcpClient.sendData((const char*)lData.data(), 4000);

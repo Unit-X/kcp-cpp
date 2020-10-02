@@ -29,6 +29,8 @@ public:
     int mResend = 0; //Retransmit when missed mResend number ACK (Default value is 0)
     bool mFlow = false; //Flow control, False: Off / True: On.
     int mMtu = 1472; //Maximum payload in a single UDP datagram
+    int mSndWnd = 32; //Send window size
+    int mRcvWnd = 128; //Receive window size
 };
 
 //Optional context passed to the callbacks

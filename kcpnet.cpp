@@ -112,6 +112,13 @@ int KCPNetClient::configureKCP(KCPSettings &rSettings) {
         KCP_LOGGER(false,LOGG_ERROR,"ikcp_setmtu client failed.")
         return lResult;
     }
+
+    lResult = ikcp_wndsize(mKCP, rSettings.mSndWnd , rSettings.mRcvWnd);
+    if (lResult) {
+        KCP_LOGGER(false,LOGG_ERROR,"ikcp_wndsize client failed.")
+        return lResult;
+    }
+
     return lResult;
 }
 
@@ -227,6 +234,10 @@ KCPNetServer::~KCPNetServer() {
             KCP_LOGGER(true, LOGG_FATAL, "Nudge thread not ending will terminate anyway")
         }
     }
+
+    for (const auto &rKCP: mKCPMap) {
+        if (rKCP.second->mKCPServer) ikcp_release(rKCP.second->mKCPServer);
+    }
     KCP_LOGGER(false,LOGG_NOTIFY,"KCPNetServer Destruct")
 }
 
@@ -245,12 +256,17 @@ int KCPNetServer::configureKCP(KCPSettings &rSettings, KCPContext* pCTX) {
     if (mKCPMap.count(pCTX->mKCPSocket)) {
         lResult = ikcp_nodelay(mKCPMap[pCTX->mKCPSocket]->mKCPServer, rSettings.mNodelay, rSettings.mInterval, rSettings.mResend, rSettings.mFlow);
         if (lResult) {
-            KCP_LOGGER(false,LOGG_ERROR,"ikcp_nodelay client failed.")
+            KCP_LOGGER(false,LOGG_ERROR,"ikcp_nodelay server failed.")
             return lResult;
         }
         lResult = ikcp_setmtu(mKCPMap[pCTX->mKCPSocket]->mKCPServer, rSettings.mMtu);
         if (lResult) {
-            KCP_LOGGER(false,LOGG_ERROR,"ikcp_setmtu client failed.")
+            KCP_LOGGER(false,LOGG_ERROR,"ikcp_setmtu server failed.")
+            return lResult;
+        }
+        lResult = ikcp_wndsize(mKCPMap[pCTX->mKCPSocket]->mKCPServer, rSettings.mSndWnd , rSettings.mRcvWnd);
+        if (lResult) {
+            KCP_LOGGER(false,LOGG_ERROR,"ikcp_wndsize server failed.")
             return lResult;
         }
     } else {
