@@ -2,7 +2,6 @@
 
 #include "kcpnet.h"
 #include <vector>
-#include <algorithm>
 
 std::shared_ptr<KCPContext> gRetainThis;
 
@@ -32,6 +31,14 @@ void gotDataClient(const char* pData, size_t lSize, KCPContext* pCTX) {
     std::cout << "The client got -> " << unsigned(lSize) << " bytes of data" << std::endl;
 }
 
+void noConnectionServer(KCPContext* pCTX) {
+    std::cout << "The server timed out a client." << std::endl;
+}
+
+void noConnectionClient(KCPContext* pCTX) {
+    std::cout << "The server is not active." << std::endl;
+}
+
 int main() {
     std::cout << "KCP-cpp test" << std::endl;
 
@@ -46,9 +53,13 @@ int main() {
     lKcpServer.mGotDataServer = std::bind(&gotDataServer, std::placeholders::_1, std::placeholders::_2,
                                    std::placeholders::_3);
 
+    lKcpServer.mNoConnectionServer = std::bind(&noConnectionServer, std::placeholders::_1);
+
     KCPNetClient lKcpClient ( "127.0.0.1", 8000, 10, nullptr);
     lKcpClient.mGotDataClient = std::bind(&gotDataClient, std::placeholders::_1, std::placeholders::_2,
                                           std::placeholders::_3);
+
+    lKcpClient.mNoConnectionClient = std::bind(&noConnectionClient, std::placeholders::_1);
 
     KCPSettings lSettingsClient;
     if(lKcpClient.configureKCP(lSettingsClient)) {
@@ -69,7 +80,7 @@ int main() {
     std::this_thread::sleep_for(std::chrono::seconds (1));
     lKcpClient.sendData((const char*)lData.data(), 4000);
     lKcpServer.sendData((const char*)lData.data(), 4000, gRetainThis.get());
-    std::this_thread::sleep_for(std::chrono::seconds (10));
+    std::this_thread::sleep_for(std::chrono::seconds (20));
     lKcpClient.sendData((const char*)lData.data(), 4000);
     lKcpServer.sendData((const char*)lData.data(), 4000, gRetainThis.get());
 
