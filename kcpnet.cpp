@@ -100,15 +100,7 @@ KCPNetClient::~KCPNetClient() {
 
 //Fix in KCP later
 int KCPNetClient::sendData(const char* pData, size_t lSize) {
-    std::copy_n(pData,lSize,&mDataMessage[2]);
-    return ikcp_send(mKCP, (const char*)&mDataMessage[0], lSize + 2);
-}
-
-
-int KCPNetClient::sendHeartBeat() {
-    uint8_t lMessage[2] = {KCP_HEART_BEAT, 0};
-    return ikcp_send(mKCP, (const char*)&lMessage[0], sizeof(lMessage));
-
+    return ikcp_send(mKCP, pData, lSize);
 }
 
 int KCPNetClient::configureKCP(KCPSettings &rSettings) {
@@ -149,7 +141,7 @@ void KCPNetClient::kcpNudgeWorkerClient() {
             KCP_LOGGER(false, LOGG_NOTIFY,"Heart beat client")
             if (!mConnectionTimeOut && mNoConnectionClient) {
                 mNoConnectionClient(mCTX.get());
-                mHeartBeatIntervalTrigger += HEART_BEAT_DISTANCE;
+                mConnectionTimeOut = HEART_BEAT_TIME_OUT;
             }
             mConnectionTimeOut--;
         }
@@ -173,15 +165,11 @@ void KCPNetClient::netWorkerClient() {
             KCP_LOGGER(false, LOGG_NOTIFY,"netWorkerClient quitting")
             break;
         }
+        mConnectionTimeOut = HEART_BEAT_TIME_OUT;
         ikcp_input(mKCP, (const char *)receiveBuffer.data(), received_bytes);
         int lRcv = ikcp_recv(mKCP,&lBuffer[0], KCP_MAX_BYTES);
-        if (lRcv>1 && mGotDataClient) {
-            if (lBuffer[0] == (char)KCP_DATA) {
-                mGotDataClient(&lBuffer[0], lRcv, mCTX.get());
-            } else if (lBuffer[0] == (char)KCP_HEART_BEAT)  {
-                KCP_LOGGER(false, LOGG_NOTIFY,"Client got heartbeat")
-                sendHeartBeat();
-            }
+        if (lRcv>0 && mGotDataClient) {
+            mGotDataClient(&lBuffer[0], lRcv, mCTX.get());
         } //Else deal with code?
 
     }
@@ -271,19 +259,7 @@ KCPNetServer::~KCPNetServer() {
 int KCPNetServer::sendData(const char* pData, size_t lSize, KCPContext* pCTX) {
     int lStatus = -1;
     if (mKCPMap.count(pCTX->mKCPSocket)) {
-        std::copy_n(pData,lSize,&mDataMessage[2]);
-        lStatus = ikcp_send(mKCPMap[pCTX->mKCPSocket]->mKCPServer, (const char*)&mDataMessage[0], lSize + 2);
-    } else {
-        KCP_LOGGER(false,LOGG_NOTIFY,"KCP Connection is unknown")
-    }
-    return lStatus;
-}
-
-int KCPNetServer::sendHeartBeat(KCPContext* pCTX) {
-    uint8_t lMessage[2] = {KCP_HEART_BEAT, 0};
-    int lStatus = -1;
-    if (mKCPMap.count(pCTX->mKCPSocket)) {
-        lStatus = ikcp_send(mKCPMap[pCTX->mKCPSocket]->mKCPServer, (const char*)&lMessage[0], sizeof(lMessage));
+        lStatus = ikcp_send(mKCPMap[pCTX->mKCPSocket]->mKCPServer, pData, lSize);
     } else {
         KCP_LOGGER(false,LOGG_NOTIFY,"KCP Connection is unknown")
     }
@@ -331,11 +307,6 @@ void KCPNetServer::kcpNudgeWorkerServer() {
             ltimeOutFlag = true;
             mHeartBeatIntervalTrigger += HEART_BEAT_DISTANCE;
             KCP_LOGGER(false, LOGG_NOTIFY,"Heart beat ")
-            if (!mKCPMap.empty()) {
-                for (const auto &rKCP: mKCPMap) {
-                    sendHeartBeat(rKCP.second->mKCPContext.get());
-                }
-            }
         }
 
         uint32_t lTimeSleepLowest = UINT32_MAX;
@@ -348,6 +319,7 @@ void KCPNetServer::kcpNudgeWorkerServer() {
                 if (ltimeOutFlag) {
                     if (!pKCP->second->mConnectionTimeOut && mNoConnectionServer) {
                         mNoConnectionServer(pKCP->second->mKCPContext.get());
+                        //Also garbage collect the C layer FIXME!!!
                         lDeleteThis = true;
                     }
                     pKCP->second->mConnectionTimeOut--;
@@ -425,24 +397,16 @@ void KCPNetServer::netWorkerServer() {
             configureKCP(lx->mSettings, lx.get());
             ikcp_input(mKCPMap[lKey]->mKCPServer,(const char *) receiveBuffer.data(), received_bytes);
             int lRcv = ikcp_recv(mKCPMap[lKey]->mKCPServer, &lBuffer[0], KCP_MAX_BYTES);
-            if (lRcv > 1 && mGotDataServer) {
-                if (lBuffer[0] == (char)KCP_DATA) {
-                    mGotDataServer(&lBuffer[2], lRcv - 2, lx.get());
-                } else if (lBuffer[0] == (char)KCP_HEART_BEAT)  { //Not likely and not needed but keep
-                    KCP_LOGGER(false, LOGG_NOTIFY,"Server got heartbeat. Not expected")
-                }
+            if (lRcv > 0 && mGotDataServer) {
+                mGotDataServer(&lBuffer[0], lRcv, lx.get());
             }
             //The connection is known pass the data to RCP
         } else {
+            mKCPMap[lKey]->mConnectionTimeOut = HEART_BEAT_TIME_OUT;
             ikcp_input(mKCPMap[lKey]->mKCPServer,(const char *) receiveBuffer.data(), received_bytes);
             int lRcv = ikcp_recv(mKCPMap[lKey]->mKCPServer, &lBuffer[0], KCP_MAX_BYTES);
-            if (lRcv > 1 && mGotDataServer) {
-                if (lBuffer[0] == (char)KCP_DATA) {
-                    mGotDataServer(&lBuffer[2], lRcv - 2, mKCPMap[lKey]->mKCPContext.get());
-                } else if (lBuffer[0] == (char)KCP_HEART_BEAT)  {
-                    KCP_LOGGER(false, LOGG_NOTIFY,"Server got heartbeat")
-                    mKCPMap[lKey]->mConnectionTimeOut = HEART_BEAT_TIME_OUT;
-                }
+            if (lRcv > 0 && mGotDataServer) {
+                mGotDataServer(&lBuffer[2], lRcv - 2, mKCPMap[lKey]->mKCPContext.get());
             }
         }
     }

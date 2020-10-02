@@ -22,9 +22,6 @@
 #include <unordered_map>
 #include <functional>
 
-#define KCP_HEART_BEAT 0x81
-#define KCP_DATA 0x82
-
 #define HEART_BEAT_DISTANCE 500
 //Time out after HEART_BEAT_DISTANCE ms * HEART_BEAT_TIME_OUT milliseconds
 #define HEART_BEAT_TIME_OUT 10
@@ -90,10 +87,6 @@ protected:
 private:
     void netWorkerClient();
     void kcpNudgeWorkerClient();
-    int sendHeartBeat();
-
-    //Fixme
-    uint8_t mDataMessage[4096] = {KCP_DATA, 0};
 
     ikcpcb *mKCP = nullptr; //The KCP handle for client mode
     kissnet::udp_socket mKissnetSocket;
@@ -153,9 +146,6 @@ private:
 
     void netWorkerServer();
     void kcpNudgeWorkerServer();
-    int sendHeartBeat(KCPContext* pCTX);
-
-    uint8_t mDataMessage[4096] = {KCP_DATA, 0};
 
     std::unordered_map<uint64_t, std::unique_ptr<KCPServerData>> mKCPMap;
     kissnet::udp_socket mKissnetSocket;
