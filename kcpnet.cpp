@@ -2,7 +2,7 @@
 // Created by Anders Cedronius on 2020-09-30.
 //
 
-//TODO Disconnect, locks for thread safety, documentation, unit tests.
+//TODO documentation, unit tests.
 
 #include "kcpnet.h"
 #include "kcplogger.h"
@@ -94,16 +94,19 @@ KCPNetClient::~KCPNetClient() {
             KCP_LOGGER(true, LOGG_FATAL, "Client nudge thread not ending will terminate anyway")
         }
     }
+    std::lock_guard<std::mutex> lock(mKCPNetMtx);
     if (mKCP) ikcp_release(mKCP);
     KCP_LOGGER(false,LOGG_NOTIFY,"KCPNetClient Destruct")
 }
 
 //Fix in KCP later
 int KCPNetClient::sendData(const char* pData, size_t lSize) {
+    std::lock_guard<std::mutex> lock(mKCPNetMtx);
     return ikcp_send(mKCP, pData, lSize);
 }
 
 int KCPNetClient::configureKCP(KCPSettings &rSettings) {
+    std::lock_guard<std::mutex> lock(mKCPNetMtx);
     int lResult = 0;
     lResult = ikcp_nodelay(mKCP, rSettings.mNodelay, rSettings.mInterval, rSettings.mResend, rSettings.mFlow);
     if (lResult) {
@@ -115,13 +118,11 @@ int KCPNetClient::configureKCP(KCPSettings &rSettings) {
         KCP_LOGGER(false,LOGG_ERROR,"ikcp_setmtu client failed.")
         return lResult;
     }
-
-    lResult = ikcp_wndsize(mKCP, rSettings.mSndWnd , rSettings.mRcvWnd);
+    lResult = ikcp_wndsize(mKCP, rSettings.mSndWnd, rSettings.mRcvWnd);
     if (lResult) {
         KCP_LOGGER(false,LOGG_ERROR,"ikcp_wndsize client failed.")
         return lResult;
     }
-
     return lResult;
 }
 
@@ -145,9 +146,10 @@ void KCPNetClient::kcpNudgeWorkerClient() {
             }
             mConnectionTimeOut--;
         }
-
+        mKCPNetMtx.lock();
         ikcp_update(mKCP, lTimeNow);  //KCP should consider uint64_t as time interface
         lTimeSleep = ikcp_check(mKCP, lTimeNow) - lTimeNow;
+        mKCPNetMtx.unlock();
         //KCP_LOGGER(false, LOGG_NOTIFY,"dead client? " << mKCP->dead_link)
         //KCP_LOGGER(false, LOGG_NOTIFY,"k " << lTimeSleep << " " << lTimeNow)
     }
@@ -166,8 +168,10 @@ void KCPNetClient::netWorkerClient() {
             break;
         }
         mConnectionTimeOut = HEART_BEAT_TIME_OUT;
+        mKCPNetMtx.lock();
         ikcp_input(mKCP, (const char *)receiveBuffer.data(), received_bytes);
         int lRcv = ikcp_recv(mKCP,&lBuffer[0], KCP_MAX_BYTES);
+        mKCPNetMtx.unlock();
         if (lRcv>0 && mGotDataClient) {
             mGotDataClient(&lBuffer[0], lRcv, mCTX.get());
         } //Else deal with code?
@@ -250,6 +254,7 @@ KCPNetServer::~KCPNetServer() {
         }
     }
 
+    std::lock_guard<std::mutex> lock(mKCPMapMtx);
     for (const auto &rKCP: mKCPMap) {
         if (rKCP.second->mKCPServer) ikcp_release(rKCP.second->mKCPServer);
     }
@@ -257,6 +262,7 @@ KCPNetServer::~KCPNetServer() {
 }
 
 int KCPNetServer::sendData(const char* pData, size_t lSize, KCPContext* pCTX) {
+    std::lock_guard<std::mutex> lock(mKCPMapMtx);
     int lStatus = -1;
     if (mKCPMap.count(pCTX->mKCPSocket)) {
         lStatus = ikcp_send(mKCPMap[pCTX->mKCPSocket]->mKCPServer, pData, lSize);
@@ -267,6 +273,7 @@ int KCPNetServer::sendData(const char* pData, size_t lSize, KCPContext* pCTX) {
 }
 
 int KCPNetServer::configureKCP(KCPSettings &rSettings, KCPContext* pCTX) {
+    std::lock_guard<std::mutex> lock(mKCPMapMtx);
     int lResult = 0;
     if (mKCPMap.count(pCTX->mKCPSocket)) {
         lResult = ikcp_nodelay(mKCPMap[pCTX->mKCPSocket]->mKCPServer, rSettings.mNodelay, rSettings.mInterval, rSettings.mResend, rSettings.mFlow);
@@ -310,6 +317,7 @@ void KCPNetServer::kcpNudgeWorkerServer() {
         }
 
         uint32_t lTimeSleepLowest = UINT32_MAX;
+        mKCPMapMtx.lock();
         if (!mKCPMap.empty()) {
             std::vector<uint64_t> lRemoveList;
             //for (const auto &rKCP: mKCPMap) {
@@ -318,8 +326,9 @@ void KCPNetServer::kcpNudgeWorkerServer() {
                 bool lDeleteThis = false;
                 if (ltimeOutFlag) {
                     if (!pKCP->second->mConnectionTimeOut && mNoConnectionServer) {
+                        mKCPMapMtx.unlock();
                         mNoConnectionServer(pKCP->second->mKCPContext.get());
-                        //Also garbage collect the C layer FIXME!!!
+                        mKCPMapMtx.lock();
                         lDeleteThis = true;
                     }
                     pKCP->second->mConnectionTimeOut--;
@@ -336,9 +345,9 @@ void KCPNetServer::kcpNudgeWorkerServer() {
                     }
                     ++pKCP;
                 }
-
             }
         }
+        mKCPMapMtx.unlock();
         if (lTimeSleepLowest != UINT32_MAX) {
             lTimeSleep = lTimeSleepLowest;
         } else {
@@ -371,18 +380,22 @@ void KCPNetServer::netWorkerServer() {
         uint64_t lKey = (uint64_t) lA << 40 | (uint64_t) lB << 32 | (uint64_t) lC << 24 | (uint64_t) lD << 16 |
                         (uint64_t) lFromWho.port;
 
+        mKCPMapMtx.lock();
         if (!mKCPMap.count(lKey)) {
             KCP_LOGGER(false, LOGG_NOTIFY,"New server connection")
             std::shared_ptr<KCPContext> lx = std::make_shared<KCPContext>(lKey);
+
             if (mValidateConnectionCallback) {
+                mKCPMapMtx.unlock();
                 auto lCTX = mValidateConnectionCallback(lFromWho.address, lFromWho.port, lx);
                 if (lCTX == nullptr) {
-                    //The connection was not accepted
                     KCP_LOGGER(false, LOGG_NOTIFY,"Connection rejected")
                     continue;
                 }
+                mKCPMapMtx.lock();
             }
-            //Create the connection and give RCP the data
+
+            //Create the connection and hand RCP the data
             auto lConnection = std::make_unique<KCPServerData>();
             lConnection->mKCPContext = lx;
             lConnection->mWeakKCPNetServer = this;
@@ -394,9 +407,12 @@ void KCPNetServer::netWorkerServer() {
             kissnet::udp_socket lCreateSocket(kissnet::endpoint(lFromWho.address, lFromWho.port));
             lConnection->mSocket = std::move(lCreateSocket); //Move ownership to this/me
             mKCPMap[lKey] = std::move(lConnection);
+            mKCPMapMtx.unlock();
             configureKCP(lx->mSettings, lx.get());
+            mKCPMapMtx.lock();
             ikcp_input(mKCPMap[lKey]->mKCPServer,(const char *) receiveBuffer.data(), received_bytes);
             int lRcv = ikcp_recv(mKCPMap[lKey]->mKCPServer, &lBuffer[0], KCP_MAX_BYTES);
+            mKCPMapMtx.unlock();
             if (lRcv > 0 && mGotDataServer) {
                 mGotDataServer(&lBuffer[0], lRcv, lx.get());
             }
@@ -405,8 +421,9 @@ void KCPNetServer::netWorkerServer() {
             mKCPMap[lKey]->mConnectionTimeOut = HEART_BEAT_TIME_OUT;
             ikcp_input(mKCPMap[lKey]->mKCPServer,(const char *) receiveBuffer.data(), received_bytes);
             int lRcv = ikcp_recv(mKCPMap[lKey]->mKCPServer, &lBuffer[0], KCP_MAX_BYTES);
+            mKCPMapMtx .unlock();
             if (lRcv > 0 && mGotDataServer) {
-                mGotDataServer(&lBuffer[2], lRcv - 2, mKCPMap[lKey]->mKCPContext.get());
+                mGotDataServer(&lBuffer[0], lRcv, mKCPMap[lKey]->mKCPContext.get());
             }
         }
     }

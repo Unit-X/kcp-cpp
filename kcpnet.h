@@ -88,6 +88,7 @@ private:
     void netWorkerClient();
     void kcpNudgeWorkerClient();
 
+    std::mutex mKCPNetMtx;
     ikcpcb *mKCP = nullptr; //The KCP handle for client mode
     kissnet::udp_socket mKissnetSocket;
     bool mNetworkThreadRunning = false;
@@ -108,6 +109,14 @@ public:
 
     class KCPServerData {
     public:
+
+       // KCPServerData() {
+
+       // }
+
+        virtual ~KCPServerData() {
+            ikcp_release(mKCPServer);
+        }
         KCPNetServer* mWeakKCPNetServer = nullptr;
         ikcpcb* mKCPServer = nullptr;
         std::shared_ptr<KCPContext> mKCPContext = nullptr;
@@ -147,6 +156,7 @@ private:
     void netWorkerServer();
     void kcpNudgeWorkerServer();
 
+    std::mutex mKCPMapMtx;
     std::unordered_map<uint64_t, std::unique_ptr<KCPServerData>> mKCPMap;
     kissnet::udp_socket mKissnetSocket;
     bool mNetworkThreadRunning = false;

@@ -2,6 +2,7 @@
 
 #include "kcpnet.h"
 #include <vector>
+#include <algorithm>
 
 std::shared_ptr<KCPContext> gRetainThis;
 
