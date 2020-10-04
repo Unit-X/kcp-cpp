@@ -21,6 +21,7 @@
 #include <thread>
 #include <unordered_map>
 #include <functional>
+#include <mutex>
 
 #define HEART_BEAT_DISTANCE 500
 //Time out after HEART_BEAT_DISTANCE ms * HEART_BEAT_TIME_OUT milliseconds
