@@ -377,13 +377,20 @@ void KCPNetServer::netWorkerServer() {
         char lCh; //to temporarily store the '.'
         //or + shift it all together
         lS >> lA >> lCh >> lB >> lCh >> lC >> lCh >> lD;
+
+        //Optimize?
         uint64_t lKey = (uint64_t) lA << 40 | (uint64_t) lB << 32 | (uint64_t) lC << 24 | (uint64_t) lD << 16 |
                         (uint64_t) lFromWho.port;
 
         mKCPMapMtx.lock();
         if (!mKCPMap.count(lKey)) {
             KCP_LOGGER(false, LOGG_NOTIFY,"New server connection")
-            std::shared_ptr<KCPContext> lx = std::make_shared<KCPContext>(lKey);
+            std::shared_ptr<KCPContext> lx;
+            if (!mCTX) {
+                lx = std::make_shared<KCPContext>(lKey);
+            } else {
+                lx = mCTX;
+            }
 
             if (mValidateConnectionCallback) {
                 mKCPMapMtx.unlock();

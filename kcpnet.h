@@ -30,20 +30,20 @@
 class KCPSettings {
 public:
     bool mNodelay = false;  //No delay mode. False: Off / True: On.
-    int mInterval = 100;    //KCP update interval in ms
-    int mResend = 0;        //Retransmit when missed mResend number ACK (Default value is 0)
+    int  mInterval = 100;   //KCP update interval in ms
+    int  mResend = 0;       //Retransmit when missed mResend number ACK (Default value is 0)
     bool mFlow = false;     //Flow control, False: Off / True: On.
-    int mMtu = 1472;        //Maximum payload in a single UDP datagram
-    int mSndWnd = 32;       //Send window size
-    int mRcvWnd = 32;       //Receive window size //The doc says 32 the code says 128
+    int  mMtu = 1472;       //Maximum payload in a single UDP datagram
+    int  mSndWnd = 32;      //Send window size
+    int  mRcvWnd = 32;      //Receive window size //The doc says 32 the code says 128
 };
 
 
 //Optional context passed to the callbacks
 class KCPContext {
 public:
-    explicit KCPContext (uint64_t lKey) {
-        mKCPSocket = lKey;
+    explicit KCPContext (uint64_t lKey): mKCPSocket(lKey) {
+
     }
     std::any mObject = nullptr;         // For safe object lifecycles
     void* mUnsafePointer = nullptr;     // Lightweight alternative for unsafe pointers
