@@ -2,11 +2,9 @@
 
 ![alt text](kcp_cpp_logo.png)
 
-*Simple C++ wrapper of the [KCP](https://github.com/skywind3000/kcp) protocol*.
+**Simple C++ wrapper of the [KCP](https://github.com/skywind3000/kcp) protocol.**
 
-![alt text](kcp.svg)
-
-Work in progress
+[![alt text](kcp.svg)](https://github.com/skywind3000/kcp)
 
 ## Build
 
@@ -143,7 +141,7 @@ Add this in your CMake file.
 ```
 #Include kcpnet
 include(ExternalProject)
-ExternalProject_Add(project_ kcpnet
+ExternalProject_Add(project_kcpnet
         GIT_REPOSITORY https://github.com/Unit-X/kcp-cpp
         GIT_SUBMODULES ""
         UPDATE_COMMAND ""
@@ -156,9 +154,18 @@ ExternalProject_Add(project_ kcpnet
         INSTALL_COMMAND ""
         )
 add_library(kcpnet STATIC IMPORTED)
-set_property(TARGET kcpnet PROPERTY IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/kcpnet/libkcpnet.a)
-add_dependencies(kcpnet project_ kcpnet)
+add_library(kcp STATIC IMPORTED)
+IF (WIN32)
+    set_property(TARGET kcpnet PROPERTY IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/kcpnet/${CMAKE_BUILD_TYPE}/kcpnet.lib)
+    set_property(TARGET kcpnet PROPERTY IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/kcpnet/kcp/${CMAKE_BUILD_TYPE}/kcp.lib)
+ELSE()
+    set_property(TARGET kcpnet PROPERTY IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/kcpnet/libkcpnet.a)
+    set_property(TARGET kcp PROPERTY IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/kcpnet/kcp/libkcp.a)
+ENDIF()
+
+add_dependencies(kcpnet project_kcpnet)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/kcpnet/)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/kcpnet/kcp/)
 ```
 
 * **Step2**
