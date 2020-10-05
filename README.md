@@ -56,23 +56,19 @@ cmake --build . --config Debug
 //----------
 
 //Create the server 
-//1. Listening interface
-//2. Listening port
-//3. Optional context
-KCPNetServer lKcpServer ( "127.0.0.1", 8000, nullptr);
+//1. Data from server callback
+//2. Client disconnect callback
+//3. Validate new client callback
+//4. Listening interface
+//5. Listening port
+//6. Optional context
+KCPNetServer lKcpServer (gotDataServer,
+                         noConnectionServer,
+                         validateConnection,
+                         "127.0.0.1",
+                         8000,
+                         nullptr);
 
-//Register callbacks
-
-//Callback when a new client connects
-lKcpServer.mValidateConnectionCallback = std::bind(&validateConnection, std::placeholders::_1, std::placeholders::_2,
-                                             std::placeholders::_3);
-
-//Callback when receiving data from the client
-lKcpServer.mGotDataServer = std::bind(&gotDataServer, std::placeholders::_1, std::placeholders::_2,
-                                   std::placeholders::_3);
-
-//Optional callback when client disconnects
-lKcpServer.mNoConnectionServer = std::bind(&noConnectionServer, std::placeholders::_1);
 
 //Send data to the client
 //1. Pointer to the data
@@ -86,20 +82,19 @@ lKcpServer.sendData((const char*)lData.data(), 4000, gRetainThis.get());
 //Client ---
 //----------
 
-
 //Create the client 
-//1. Connect to interface
-//2. Connect to port
-//3. Connection ID (Must be set identical on the server see -> validateConnection)
-//4. Optional context
-KCPNetClient lKcpClient ( "127.0.0.1", 8000, 10, nullptr);
-    
-//Callback when receiving data from the server
-lKcpClient.mGotDataClient = std::bind(&gotDataClient, std::placeholders::_1, std::placeholders::_2,
-                                          std::placeholders::_3);
-
-//Optional callback when server disconnects
-lKcpClient.mNoConnectionClient = std::bind(&noConnectionClient, std::placeholders::_1);
+//1. Got data from server
+//2. Lost connection to server
+//3. Connect to interface
+//4. Connect to port
+//5. Connection ID (Must be set identical on the server see -> validateConnection)
+//6. Optional context
+KCPNetClient lKcpClient (gotDataClient,
+                         noConnectionClient,
+                         "127.0.0.1",
+                         8000,
+                         10,
+                         nullptr);
 
 //Send data to the server
 //1. Pointer to the data
