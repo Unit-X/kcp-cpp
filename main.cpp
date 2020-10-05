@@ -40,6 +40,10 @@ void noConnectionClient(KCPContext* pCTX) {
     std::cout << "The server is not active." << std::endl;
 }
 
+class TestClass {
+    int mTestValue=100;
+};
+
 int main() {
     std::cout << "KCP-cpp test" << std::endl;
 
@@ -47,20 +51,16 @@ int main() {
     std::generate(lData.begin(), lData.end(), [n = 0]() mutable { return n++; });
 
     //Create the server and register the receive data callback and the validate connection callback
-    KCPNetServer lKcpServer ( "127.0.0.1", 8000, nullptr);
-    lKcpServer.mValidateConnectionCallback = std::bind(&validateConnection, std::placeholders::_1, std::placeholders::_2,
-                                             std::placeholders::_3);
-
-    lKcpServer.mGotDataServer = std::bind(&gotDataServer, std::placeholders::_1, std::placeholders::_2,
-                                   std::placeholders::_3);
-
-    lKcpServer.mNoConnectionServer = std::bind(&noConnectionServer, std::placeholders::_1);
-
+    std::shared_ptr<KCPContext> lx = std::make_shared<KCPContext>(0);
+    lx->mObject = std::make_shared<TestClass>();
+    KCPNetServer lKcpServer ( "127.0.0.1", 8000, lx);
+    lKcpServer.mValidateConnectionCallback = validateConnection;
+    lKcpServer.mGotDataServer = gotDataServer;
+    lKcpServer.mNoConnectionServer = noConnectionServer;
+    
     KCPNetClient lKcpClient ( "127.0.0.1", 8000, 10, nullptr);
-    lKcpClient.mGotDataClient = std::bind(&gotDataClient, std::placeholders::_1, std::placeholders::_2,
-                                          std::placeholders::_3);
-
-    lKcpClient.mNoConnectionClient = std::bind(&noConnectionClient, std::placeholders::_1);
+    lKcpClient.mGotDataClient = gotDataClient;
+    lKcpClient.mNoConnectionClient = noConnectionClient;
 
     KCPSettings lSettingsClient;
     if(lKcpClient.configureKCP(lSettingsClient)) {

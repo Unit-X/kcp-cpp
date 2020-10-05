@@ -1045,10 +1045,12 @@ namespace kissnet
 			if (received_bytes < 0)
 			{
 				const auto error = get_error_code();
-				if (error == EWOULDBLOCK)
-					return { 0, socket_status::non_blocking_would_have_blocked };
-				if (error == EAGAIN)
-					return { 0, socket_status::non_blocking_would_have_blocked };
+				if (error == EWOULDBLOCK) {
+                    return {0, socket_status::non_blocking_would_have_blocked};
+                }
+				if (error == EAGAIN) {
+                    return {0, socket_status::non_blocking_would_have_blocked};
+                }
 				return { 0, socket_status::errored };
 			}
 

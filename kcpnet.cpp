@@ -63,9 +63,8 @@ KCPNetClient::KCPNetClient(std::string lIP, uint16_t lPort, uint32_t lID, std::s
         throw std::runtime_error("Failed creating KCP");
     }
     mKCP->output = udp_output_client;
-
-    std::thread(std::bind(&KCPNetClient::netWorkerClient, this)).detach();
-    std::thread(std::bind(&KCPNetClient::kcpNudgeWorkerClient, this)).detach();
+    std::thread([=](){netWorkerClient();}).detach();
+    std::thread([=](){kcpNudgeWorkerClient();}).detach();
     KCP_LOGGER(false,LOGG_NOTIFY,"KCPNetClient Constructed")
 }
 
@@ -224,8 +223,8 @@ KCPNetServer::KCPNetServer(std::string lIP, uint16_t lPort, std::shared_ptr<KCPC
     kissnet::udp_socket lCreateSocket(kissnet::endpoint(lIP, lPort));
     mKissnetSocket = std::move(lCreateSocket); //Move ownership to this/me
     mKissnetSocket.bind();
-    std::thread(std::bind(&KCPNetServer::netWorkerServer, this)).detach();
-    std::thread(std::bind(&KCPNetServer::kcpNudgeWorkerServer, this)).detach();
+    std::thread([=](){netWorkerServer();}).detach();
+    std::thread([=](){kcpNudgeWorkerServer();}).detach();
     KCP_LOGGER(false,LOGG_NOTIFY,"KCPNetServer Constructed")
 }
 
@@ -369,6 +368,10 @@ void KCPNetServer::netWorkerServer() {
             KCP_LOGGER(false, LOGG_NOTIFY,"serverWorker quitting")
             break;
         }
+        if (status == kissnet::socket_status::non_blocking_would_have_blocked) {
+            KCP_LOGGER(false, LOGG_NOTIFY,"non_blocking_would_have_blocked")
+            continue;
+        }
         if (mDropAll) continue;
         //Who did send me data? Generate a unique key where (ip:port) a.b.c.d:e becomes a (broken down to uiny8_t) uint64_t 00abcdee
         kissnet::endpoint lFromWho = mKissnetSocket.get_recv_endpoint();
@@ -385,11 +388,11 @@ void KCPNetServer::netWorkerServer() {
         mKCPMapMtx.lock();
         if (!mKCPMap.count(lKey)) {
             KCP_LOGGER(false, LOGG_NOTIFY,"New server connection")
-            std::shared_ptr<KCPContext> lx;
-            if (!mCTX) {
-                lx = std::make_shared<KCPContext>(lKey);
-            } else {
-                lx = mCTX;
+            std::shared_ptr<KCPContext> lx = std::make_shared<KCPContext>(lKey);
+            if (mCTX) {
+                lx->mUnsafePointer = mCTX->mUnsafePointer;
+                lx->mValue = mCTX->mValue;
+                lx->mObject = mCTX->mObject;
             }
 
             if (mValidateConnectionCallback) {
