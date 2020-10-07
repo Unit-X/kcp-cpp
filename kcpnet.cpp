@@ -128,9 +128,9 @@ int KCPNetClient::configureKCP(KCPSettings &rSettings) {
 //TODO Create a drift into corrected time
 int64_t KCPNetClient::getNetworkTimeus(){
     if (!mGotCorrection) return 0;
-    uint64_t lLocalTime = std::chrono::duration_cast<std::chrono::milliseconds>(
+    int64_t lLocalTime = std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count();
-    auto lRecalculatedTime = lLocalTime - mCurrentCorrection;
+    int64_t lRecalculatedTime = lLocalTime - mCurrentCorrection;
 
     if (!mFirstTimeDelivery) {
         if (mLastDeliveredTime < lRecalculatedTime) {
@@ -196,7 +196,7 @@ void KCPNetClient::netWorkerClient(void (*gotData)(const char *, size_t, KCPCont
                 mGotCorrection = true;
             }
             mKCPNetMtx.lock();
-            uint64_t lTimeNow = std::chrono::duration_cast<std::chrono::microseconds>(
+            int64_t lTimeNow = std::chrono::duration_cast<std::chrono::microseconds>(
                     std::chrono::steady_clock::now().time_since_epoch()).count();
             lTimeData->t2 = lTimeNow;
             lTimeData->t3 = lTimeNow;
@@ -534,8 +534,8 @@ void KCPNetServer::netWorkerServer(void (*gotData)(const char *, size_t, KCPCont
                 int64_t lTimeNow = std::chrono::duration_cast<std::chrono::microseconds>(
                         std::chrono::steady_clock::now().time_since_epoch()).count();
                 lTimeData->t4 = lTimeNow;
-                auto lDelay = lTimeData->t4 - lTimeData->t1;
-                auto lCompensation = ((lTimeData->t2 - lTimeData->t1) + (lTimeData->t3 - lTimeData->t4)) / 2;
+                int64_t lDelay = lTimeData->t4 - lTimeData->t1;
+                int64_t lCompensation = ((lTimeData->t2 - lTimeData->t1) + (lTimeData->t3 - lTimeData->t4)) / 2;
 
                 //Check T2 - T1 compared to T4 - T3 ?
                 //The lowest delay has the lowest diff anyway so let's do that later if needed.
