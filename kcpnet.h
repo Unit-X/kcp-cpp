@@ -12,6 +12,8 @@
 
 // C++ wrapper around KCP
 
+//All payload data is little endian.
+
 #ifndef KCP_CPP_KCPNET_H
 #define KCP_CPP_KCPNET_H
 
@@ -23,6 +25,7 @@
 #include <functional>
 #include <mutex>
 #include <vector>
+#include <atomic>
 
 //Time preamble
 #define TIME_PREAMBLE_V1 0x000100010ff00ff0
@@ -35,7 +38,8 @@
 #define TIME_PACKETS_NORMAL_DISTANCE_MS 1000
 
 //Time constants client
-#define MAX_TIME_DRIFT_HZ_SECOND 10
+//The maximum adjustment + and - in microseconds per second allowed
+#define MAX_TIME_DRIFT_US_SECOND 10
 
 //Count the HEART_BEAT every x ms.
 #define HEART_BEAT_DISTANCE 500
@@ -90,6 +94,7 @@ public:
     virtual ~KCPNetClient();
     int sendData(const char* pData, size_t lSize);
     int configureKCP(KCPSettings &rSettings);
+    int64_t getNetworkTimeus(); //Network time in us
     void udpOutputClient(const char *pBuf, int lSize); //Method used by the bridge function
     // delete copy and move constructors and assign operators
     KCPNetClient(KCPNetClient const &) = delete;             // Copy construct
@@ -109,8 +114,10 @@ private:
     bool mNudgeThreadActive = false;
     uint64_t mConnectionTimeOut = HEART_BEAT_TIME_OUT;
     uint64_t mHeartBeatIntervalTrigger = 0;
-    int64_t mCurrentCorrection = 0; //Make atomic
-    bool mGotCorrection = false;
+    bool mFirstTimeDelivery = true;
+    int64_t mLastDeliveredTime;
+    std::atomic<int64_t> mCurrentCorrection = 0;
+    std::atomic<bool> mGotCorrection = false;
 };
 
 //------------------------------------------------------------------------------------------

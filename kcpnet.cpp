@@ -125,6 +125,27 @@ int KCPNetClient::configureKCP(KCPSettings &rSettings) {
     return lResult;
 }
 
+//TODO Create a drift into corrected time
+int64_t KCPNetClient::getNetworkTimeus(){
+    if (!mGotCorrection) return 0;
+    uint64_t lLocalTime = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+    auto lRecalculatedTime = lLocalTime - mCurrentCorrection;
+
+    if (!mFirstTimeDelivery) {
+        if (mLastDeliveredTime < lRecalculatedTime) {
+            mLastDeliveredTime = lRecalculatedTime;
+            return lRecalculatedTime;
+        } else {
+            return mLastDeliveredTime;
+        }
+    }
+
+    mLastDeliveredTime = lRecalculatedTime;
+    mFirstTimeDelivery = false;
+    return lRecalculatedTime;
+}
+
 void KCPNetClient::kcpNudgeWorkerClient(void (*pDisconnect)(KCPContext *)) {
     mNudgeThreadRunning = true;
     mNudgeThreadActive = true;
