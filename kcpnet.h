@@ -39,7 +39,7 @@
 
 //Time constants client
 //The maximum adjustment + and - in microseconds per second allowed
-#define MAX_TIME_DRIFT_US_SECOND 10
+#define MAX_TIME_DRIFT_PPM 500
 
 //Count the HEART_BEAT every x ms.
 #define HEART_BEAT_DISTANCE 500
@@ -116,6 +116,7 @@ private:
     uint64_t mHeartBeatIntervalTrigger = 0;
     bool mFirstTimeDelivery = true;
     int64_t mLastDeliveredTime;
+    std::atomic<int64_t> mCurrentCorrectionTarget = 0;
     std::atomic<int64_t> mCurrentCorrection = 0;
     std::atomic<bool> mGotCorrection = false;
 };

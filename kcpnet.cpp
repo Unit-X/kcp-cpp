@@ -149,15 +149,47 @@ int64_t KCPNetClient::getNetworkTimeus(){
 void KCPNetClient::kcpNudgeWorkerClient(void (*pDisconnect)(KCPContext *)) {
     mNudgeThreadRunning = true;
     mNudgeThreadActive = true;
-    uint32_t lTimeSleep = 10;
-    uint64_t lTimeBase = std::chrono::duration_cast<std::chrono::milliseconds>(
+    uint32_t lTimeSleepms = 10;
+    uint64_t lTimeBaseus = std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count();
-    while (mNudgeThreadActive) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(lTimeSleep));
-        uint64_t lTimeNow = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now().time_since_epoch()).count() - lTimeBase;
 
-        if (lTimeNow > mHeartBeatIntervalTrigger) {
+    uint64_t lTimeLast = 0;
+
+    while (mNudgeThreadActive) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(lTimeSleepms));
+        uint64_t lTimeNowus = std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count() - lTimeBaseus;
+
+        if (mGotCorrection) {
+            if (!lTimeLast) {
+                lTimeLast = lTimeNowus;
+            } else {
+                uint64_t lDiffTime = lTimeNowus - lTimeLast;
+                lTimeLast = lTimeNowus;
+                if (mCurrentCorrectionTarget != mCurrentCorrection) {
+                    double lMulFac = lDiffTime / 1000000.0;
+                    double lMaxComp =   lMulFac * MAX_TIME_DRIFT_PPM;
+                    if (mCurrentCorrectionTarget > mCurrentCorrection) {
+                        //KCP_LOGGER(false, LOGG_NOTIFY, "+curr " << mCurrentCorrection << " target " << mCurrentCorrectionTarget << " compensation " << lMaxComp)
+                        mCurrentCorrection += lMaxComp;
+                        if (mCurrentCorrection > mCurrentCorrectionTarget) {
+                            int64_t lTmp = mCurrentCorrectionTarget;
+                            mCurrentCorrection = lTmp;
+                        }
+                    } else {
+                        //KCP_LOGGER(false, LOGG_NOTIFY, "-curr " << mCurrentCorrection << " target " << mCurrentCorrectionTarget << " compensation " << lMaxComp)
+                        mCurrentCorrection -= lMaxComp;
+                        if (mCurrentCorrection < mCurrentCorrectionTarget) {
+                            int64_t lTmp = mCurrentCorrectionTarget;
+                            mCurrentCorrection = lTmp;
+                        }
+                    }
+                }
+            }
+        }
+
+        uint64_t lTimeNowms = lTimeNowus / 1000;
+        if (lTimeNowms > mHeartBeatIntervalTrigger) {
             mHeartBeatIntervalTrigger += HEART_BEAT_DISTANCE;
             KCP_LOGGER(false, LOGG_NOTIFY, "Heart beat client")
             if (!mConnectionTimeOut && pDisconnect) {
@@ -167,8 +199,8 @@ void KCPNetClient::kcpNudgeWorkerClient(void (*pDisconnect)(KCPContext *)) {
             mConnectionTimeOut--;
         }
         mKCPNetMtx.lock();
-        ikcp_update(mKCP, lTimeNow);  //KCP should consider uint64_t as time interface
-        lTimeSleep = ikcp_check(mKCP, lTimeNow) - lTimeNow;
+        ikcp_update(mKCP, lTimeNowms);
+        lTimeSleepms = ikcp_check(mKCP, lTimeNowms) - lTimeNowms;
         mKCPNetMtx.unlock();
         //KCP_LOGGER(false, LOGG_NOTIFY,"dead client? " << mKCP->dead_link)
         //KCP_LOGGER(false, LOGG_NOTIFY,"k " << lTimeSleep << " " << lTimeNow)
@@ -192,7 +224,10 @@ void KCPNetClient::netWorkerClient(void (*gotData)(const char *, size_t, KCPCont
             auto lTimeData = (KCPTimePacket *) receiveBuffer.data();
             if (lTimeData->correctionActive == 1) {
                 lTimeData->correctionActive = 2;
-                mCurrentCorrection = lTimeData->correction;
+                if (!mGotCorrection) {
+                    mCurrentCorrection = lTimeData->correction;
+                }
+                mCurrentCorrectionTarget = lTimeData->correction;
                 mGotCorrection = true;
             }
             mKCPNetMtx.lock();
