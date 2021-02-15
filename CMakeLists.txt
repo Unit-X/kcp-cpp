@@ -38,7 +38,7 @@ ENDIF()
 add_dependencies(kcp project_kcp)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/kcp/)
 
-add_library(kcpnet STATIC kcpnet.cpp)
+add_library(kcpnet STATIC KCPNet.cpp)
 target_link_libraries(kcpnet kcp Threads::Threads)
 
 add_executable(kcp_cpp main.cpp)

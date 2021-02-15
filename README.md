@@ -176,7 +176,7 @@ target_link_libraries((your target) kcpnet kcp (the rest you want to link))
 Add header file to your project.
 
 ```
-#include "kcpnet.h"
+#include "KCPNet.h"
 ```
 
 

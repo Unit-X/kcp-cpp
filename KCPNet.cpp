@@ -4,8 +4,8 @@
 
 //TODO documentation, unit tests.
 
-#include "kcpnet.h"
-#include "kcplogger.h"
+#include "KCPNet.h"
+#include "KCPLogger.h"
 #include <stdexcept>
 #include <algorithm>
 #include <vector>
@@ -24,7 +24,7 @@ int udp_output_client(const char *pBuf, int lSize, ikcpcb *pKCP, void *pCTX) {
         lWeakSelf->udpOutputClient(pBuf, lSize);
     } else {
         KCP_LOGGER(true, LOGG_FATAL, "udp_output_client failed getting 'this'")
-        return -1; //Throw
+        return -1; // Throw
     }
     return 0;
 }
@@ -56,7 +56,7 @@ KCPNetClient::KCPNetClient(void (*pGotData)(const char *, size_t, KCPContext *),
     }
 
     kissnet::udp_socket lCreateSocket(kissnet::endpoint(lIP, lPort));
-    mKissnetSocket = std::move(lCreateSocket); //Move ownership to this/me
+    mKissnetSocket = std::move(lCreateSocket); // Move ownership to this/me
 
     mKCP = ikcp_create(lID, this);
     if (!mKCP) {
@@ -70,11 +70,11 @@ KCPNetClient::KCPNetClient(void (*pGotData)(const char *, size_t, KCPContext *),
 
 KCPNetClient::~KCPNetClient() {
     uint32_t lDeadLock;
-    //Signal close netWorker and nudge thread
-    mKissnetSocket.close(); //End net thread
-    mNudgeThreadActive = false; //End nudge thread
+    // Signal close netWorker and nudge thread
+    mKissnetSocket.close(); // End net thread
+    mNudgeThreadActive = false; // End nudge thread
 
-    //Join network thread
+    // Join network thread
     if (mNetworkThreadRunning) {
         lDeadLock = 10;
         while (mNetworkThreadRunning) {
@@ -85,7 +85,7 @@ KCPNetClient::~KCPNetClient() {
         }
     }
 
-    //Join nudge thread
+    // Join nudge thread
     lDeadLock = 10;
     while (mNudgeThreadRunning) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -98,7 +98,7 @@ KCPNetClient::~KCPNetClient() {
     KCP_LOGGER(false, LOGG_NOTIFY, "KCPNetClient Destruct")
 }
 
-//Fix in KCP later
+// Fix in KCP later
 int KCPNetClient::sendData(const char *pData, size_t lSize) {
     std::lock_guard<std::mutex> lock(mKCPNetMtx);
     return ikcp_send(mKCP, pData, lSize);
@@ -125,7 +125,7 @@ int KCPNetClient::configureKCP(KCPSettings &rSettings) {
     return lResult;
 }
 
-//TODO Create a drift into corrected time
+// TODO Create a drift into corrected time
 int64_t KCPNetClient::getNetworkTimeus(){
     if (!mGotCorrection) return 0;
     int64_t lLocalTime = std::chrono::duration_cast<std::chrono::microseconds>(
@@ -251,7 +251,7 @@ void KCPNetClient::netWorkerClient(void (*gotData)(const char *, size_t, KCPCont
         mKCPNetMtx.unlock();
         if (lRcv > 0 && gotData) {
             gotData(&lBuffer[0], lRcv, mCTX.get());
-        } //Else deal with code?
+        } // Else deal with code?
 
     }
     mNetworkThreadRunning = false;
@@ -274,7 +274,7 @@ int udp_output_server(const char *pBuf, int lSize, ikcpcb *pKCP, void *pCTX) {
         }
     } else {
         KCP_LOGGER(true, LOGG_FATAL, "udp_output_server failed getting KCPServerData")
-        return -1; //Throw
+        return -1; // Throw
     }
     return 0;
 }
@@ -313,10 +313,10 @@ KCPNetServer::KCPNetServer(void (*pGotData)(const char *, size_t, KCPContext *),
 
 KCPNetServer::~KCPNetServer() {
     uint32_t lDeadLock;
-    //Signal close netWorker and nudge thread
-    mKissnetSocket.close(); //End net thread
-    mNudgeThreadActive = false; //End nudge thread
-    //Join network thread
+    // Signal close netWorker and nudge thread
+    mKissnetSocket.close(); // End net thread
+    mNudgeThreadActive = false; // End nudge thread
+    // Join network thread
     if (mNetworkThreadRunning) {
         lDeadLock = 10;
         while (mNetworkThreadRunning) {
@@ -380,7 +380,7 @@ int KCPNetServer::configureKCP(KCPSettings &rSettings, KCPContext *pCTX) {
     return lResult;
 }
 
-//Im in lock here no need to locka again
+// Im in lock here no need to lock again
 void KCPNetServer::sendTimePacket(KCPServerData &rServerData) {
 
     KCPTimePacket lTimePacket;
@@ -396,7 +396,7 @@ void KCPNetServer::sendTimePacket(KCPServerData &rServerData) {
     }
 }
 
-//For now the server is updating all connections every 10ms
+// For now the server is updating all connections every 10ms
 void KCPNetServer::kcpNudgeWorkerServer(void (*pDisconnect)(KCPContext *)) {
     mNudgeThreadRunning = true;
     mNudgeThreadActive = true;
@@ -460,10 +460,10 @@ void KCPNetServer::kcpNudgeWorkerServer(void (*pDisconnect)(KCPContext *)) {
                     // Time transfer section
 
                     if (!pKCP->second->mClientGotCorrection && lSendTimeHiFreq) {
-                        //We have not corrected any time. send time packet
+                        // We have not corrected any time. send time packet
                         sendTimePacket(*pKCP->second);
                     } else if (pKCP->second->mClientGotCorrection && lSendTimeLowFreq) {
-                        //We have synced send a normal packet
+                        // We have synced send a normal packet
                         sendTimePacket(*pKCP->second);
                     }
 
@@ -503,15 +503,15 @@ void KCPNetServer::netWorkerServer(void (*gotData)(const char *, size_t, KCPCont
         }
 
         if (mDropAll) continue;
-        //Who did send me data? Generate a unique key where (ip:port) a.b.c.d:e becomes a (broken down to uiny8_t) uint64_t 00abcdee
+        // Who did send me data? Generate a unique key where (ip:port) a.b.c.d:e becomes a (broken down to uiny8_t) uint64_t 00abcdee
         kissnet::endpoint lFromWho = mKissnetSocket.get_recv_endpoint();
         std::stringstream lS(lFromWho.address);
-        int lA, lB, lC, lD; //to store the 4 ints from the ip string
-        char lCh; //to temporarily store the '.'
-        //or + shift it all together
+        int lA, lB, lC, lD; // to store the 4 ints from the ip string
+        char lCh; // to temporarily store the '.'
+        // or + shift it all together
         lS >> lA >> lCh >> lB >> lCh >> lC >> lCh >> lD;
 
-        //Optimize?
+        // Optimize?
         uint64_t lKey =
                 (uint64_t) lA << (uint64_t) 40 | (uint64_t) lB << (uint64_t) 32 | (uint64_t) lC << (uint64_t) 24 |
                 (uint64_t) lD << (uint64_t) 16 |
@@ -537,7 +537,7 @@ void KCPNetServer::netWorkerServer(void (*gotData)(const char *, size_t, KCPCont
                 mKCPMapMtx.lock();
             }
 
-            //Create the connection and hand RCP the data
+            // Create the connection and hand RCP the data
             auto lConnection = std::make_unique<KCPServerData>();
             lConnection->mKCPContext = lx;
             lConnection->mWeakKCPNetServer = this;
@@ -562,7 +562,7 @@ void KCPNetServer::netWorkerServer(void (*gotData)(const char *, size_t, KCPCont
             if (lRcv > 0 && gotData) {
                 gotData(&lBuffer[0], lRcv, lx.get());
             }
-            //The connection is known pass the data to RCP
+            // The connection is known pass the data to RCP
         } else {
             if (*(uint64_t *) receiveBuffer.data() == TIME_PREAMBLE_V1) {
                 auto lTimeData = (KCPTimePacket *) receiveBuffer.data();
@@ -572,8 +572,8 @@ void KCPNetServer::netWorkerServer(void (*gotData)(const char *, size_t, KCPCont
                 int64_t lDelay = lTimeData->t4 - lTimeData->t1;
                 int64_t lCompensation = ((lTimeData->t2 - lTimeData->t1) + (lTimeData->t3 - lTimeData->t4)) / 2;
 
-                //Check T2 - T1 compared to T4 - T3 ?
-                //The lowest delay has the lowest diff anyway so let's do that later if needed.
+                // Check T2 - T1 compared to T4 - T3 ?
+                // The lowest delay has the lowest diff anyway so let's do that later if needed.
 
                 mKCPMap[lKey]->mListOfDelayAndCompensation.emplace_back(std::make_pair(lDelay, lCompensation));
                 if (mKCPMap[lKey]->mListOfDelayAndCompensation.size() > MAX_SAVED_TIME_POINTS) {
