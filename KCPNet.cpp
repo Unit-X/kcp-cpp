@@ -36,36 +36,8 @@ void KCPNetClient::udpOutputClient(const char *pBuf, int lSize) {
     }
 }
 
-KCPNetClient::KCPNetClient(void (*pGotData)(const char *, size_t, KCPContext *), void (*pDisconnect)(KCPContext *),
-                           const std::string &lIP, uint16_t lPort, uint32_t lID, std::shared_ptr<KCPContext> pCTX) {
-    mCTX = std::move(pCTX);
+KCPNetClient::KCPNetClient() {
 
-    if (lIP.empty()) {
-        KCP_LOGGER(true, LOGG_FATAL, "IP / HOST must be provided")
-        throw std::invalid_argument("IP / HOST must be provided");
-    }
-
-    if (!lPort) {
-        KCP_LOGGER(true, LOGG_FATAL, "Port must be provided")
-        throw std::invalid_argument("Port must be provided");
-    }
-
-    if (!lID) {
-        KCP_LOGGER(true, LOGG_FATAL, "KCP ID can't be 0")
-        throw std::invalid_argument("KCP ID can't be 0");
-    }
-
-    kissnet::udp_socket lCreateSocket(kissnet::endpoint(lIP, lPort));
-    mKissnetSocket = std::move(lCreateSocket); // Move ownership to this/me
-
-    mKCP = ikcp_create(lID, this);
-    if (!mKCP) {
-        throw std::runtime_error("Failed creating KCP");
-    }
-    mKCP->output = udp_output_client;
-    std::thread([=]() { netWorkerClient(pGotData); }).detach();
-    std::thread([=]() { kcpNudgeWorkerClient(pDisconnect); }).detach();
-    KCP_LOGGER(false, LOGG_NOTIFY, "KCPNetClient Constructed")
 }
 
 KCPNetClient::~KCPNetClient() {
@@ -104,7 +76,42 @@ int KCPNetClient::sendData(const char *pData, size_t lSize) {
     return ikcp_send(mKCP, pData, lSize);
 }
 
-int KCPNetClient::configureKCP(KCPSettings &rSettings) {
+int KCPNetClient::configureKCP(KCPSettings &rSettings,
+                               const std::function<void(const char *, size_t, KCPContext *)> &rGotData,
+                               const std::function<void(KCPContext *)> &rDisconnect,
+                               const std::string &lIP, uint16_t lPort,
+                               uint32_t lID, std::shared_ptr<KCPContext> pCTX) {
+    mCTX = std::move(pCTX);
+
+    if (lIP.empty()) {
+        KCP_LOGGER(true, LOGG_FATAL, "IP / HOST must be provided")
+        return 1;
+    }
+
+    if (!lPort) {
+        KCP_LOGGER(true, LOGG_FATAL, "Port must be provided")
+        return 1;
+    }
+
+    if (!lID) {
+        KCP_LOGGER(true, LOGG_FATAL, "KCP ID can't be 0")
+        return 1;
+    }
+
+    kissnet::udp_socket lCreateSocket(kissnet::endpoint(lIP, lPort));
+    mKissnetSocket = std::move(lCreateSocket); // Move ownership to this/me
+
+    mKCP = ikcp_create(lID, this);
+    if (!mKCP) {
+        KCP_LOGGER(true, LOGG_FATAL, "Failed to create KCP")
+        return 1;
+    }
+    mKCP->output = udp_output_client;
+    std::thread([=]() { netWorkerClient(rGotData); }).detach();
+    std::thread([=]() { kcpNudgeWorkerClient(rDisconnect); }).detach();
+    KCP_LOGGER(false, LOGG_NOTIFY, "KCPNetClient Constructed");
+
+
     std::lock_guard<std::mutex> lock(mKCPNetMtx);
     int lResult;
     lResult = ikcp_nodelay(mKCP, rSettings.mNoDelay, rSettings.mInterval, rSettings.mResend, rSettings.mFlow);
@@ -120,7 +127,6 @@ int KCPNetClient::configureKCP(KCPSettings &rSettings) {
     lResult = ikcp_wndsize(mKCP, rSettings.mSndWnd, rSettings.mRcvWnd);
     if (lResult) {
         KCP_LOGGER(false, LOGG_ERROR, "ikcp_wndsize client failed.")
-        return lResult;
     }
     return lResult;
 }
@@ -146,7 +152,7 @@ int64_t KCPNetClient::getNetworkTimeus(){
     return lRecalculatedTime;
 }
 
-void KCPNetClient::kcpNudgeWorkerClient(void (*pDisconnect)(KCPContext *)) {
+void KCPNetClient::kcpNudgeWorkerClient(const std::function<void(KCPContext *)> &rDisconnect) {
     mNudgeThreadRunning = true;
     mNudgeThreadActive = true;
     uint32_t lTimeSleepms = 10;
@@ -192,8 +198,8 @@ void KCPNetClient::kcpNudgeWorkerClient(void (*pDisconnect)(KCPContext *)) {
         if (lTimeNowms > mHeartBeatIntervalTrigger) {
             mHeartBeatIntervalTrigger += HEART_BEAT_DISTANCE;
             KCP_LOGGER(false, LOGG_NOTIFY, "Heart beat client")
-            if (!mConnectionTimeOut && pDisconnect) {
-                pDisconnect(mCTX.get());
+            if (!mConnectionTimeOut && rDisconnect) {
+                rDisconnect(mCTX.get());
                 mConnectionTimeOut = HEART_BEAT_TIME_OUT;
             }
             mConnectionTimeOut--;
@@ -209,7 +215,7 @@ void KCPNetClient::kcpNudgeWorkerClient(void (*pDisconnect)(KCPContext *)) {
     mNudgeThreadRunning = false;
 }
 
-void KCPNetClient::netWorkerClient(void (*gotData)(const char *, size_t, KCPContext *)) {
+void KCPNetClient::netWorkerClient(const std::function<void(const char *, size_t, KCPContext *)> &rGotData) {
     mNetworkThreadRunning = true;
     kissnet::buffer<KCP_MAX_BYTES> receiveBuffer;
     char lBuffer[KCP_MAX_BYTES];
@@ -249,8 +255,8 @@ void KCPNetClient::netWorkerClient(void (*gotData)(const char *, size_t, KCPCont
         ikcp_input(mKCP, (const char *) receiveBuffer.data(), received_bytes);
         int lRcv = ikcp_recv(mKCP, &lBuffer[0], KCP_MAX_BYTES);
         mKCPNetMtx.unlock();
-        if (lRcv > 0 && gotData) {
-            gotData(&lBuffer[0], lRcv, mCTX.get());
+        if (lRcv > 0 && rGotData) {
+            rGotData(&lBuffer[0], lRcv, mCTX.get());
         } // Else deal with code?
 
     }
@@ -287,28 +293,8 @@ void KCPNetServer::udpOutputServer(const char *pBuf, int lSize, KCPServerData *l
     }
 }
 
-KCPNetServer::KCPNetServer(void (*pGotData)(const char *, size_t, KCPContext *),
-                           void (*pDisconnect)(KCPContext *),
-                           std::shared_ptr<KCPContext> (*pValidate)(std::string, uint16_t,
-                                                                    std::shared_ptr<KCPContext> &),
-                           const std::string &lIP,
-                           uint16_t lPort,
-                           std::shared_ptr<KCPContext> pCTX) {
-    mCTX = std::move(pCTX);
-    if (lIP.empty()) {
-        KCP_LOGGER(true, LOGG_FATAL, "IP / HOST must be provided")
-        throw std::invalid_argument("IP / HOST must be provided");
-    }
-    if (!lPort) {
-        KCP_LOGGER(true, LOGG_FATAL, "Port must be provided")
-        throw std::invalid_argument("Port must be provided");
-    }
-    kissnet::udp_socket lCreateSocket(kissnet::endpoint(lIP, lPort));
-    mKissnetSocket = std::move(lCreateSocket); //Move ownership to this/me
-    mKissnetSocket.bind();
-    std::thread([=]() { netWorkerServer(pGotData, pValidate); }).detach();
-    std::thread([=]() { kcpNudgeWorkerServer(pDisconnect); }).detach();
-    KCP_LOGGER(false, LOGG_NOTIFY, "KCPNetServer Constructed")
+KCPNetServer::KCPNetServer() {
+
 }
 
 KCPNetServer::~KCPNetServer() {
@@ -354,7 +340,34 @@ int KCPNetServer::sendData(const char *pData, size_t lSize, KCPContext *pCTX) {
     return lStatus;
 }
 
-int KCPNetServer::configureKCP(KCPSettings &rSettings, KCPContext *pCTX) {
+int KCPNetServer::configureKCP(const std::function<void(const char *, size_t, KCPContext *)> &rGotData,
+                               const std::function<void(KCPContext *)> &rDisconnect,
+                               const std::function<std::shared_ptr<KCPContext>(std::string, uint16_t,
+                                                                        std::shared_ptr<KCPContext> &)> &rValidate,
+                               const std::string &lIP,
+                               uint16_t lPort,
+                               std::shared_ptr<KCPContext> pCTX) {
+    mCTX = std::move(pCTX);
+    if (lIP.empty()) {
+        KCP_LOGGER(true, LOGG_FATAL, "IP / HOST must be provided");
+        return 1;
+    }
+    if (!lPort) {
+        KCP_LOGGER(true, LOGG_FATAL, "Port must be provided")
+        return 1;
+    }
+
+    kissnet::udp_socket lCreateSocket(kissnet::endpoint(lIP, lPort));
+    mKissnetSocket = std::move(lCreateSocket); //Move ownership to this/me
+    mKissnetSocket.bind();
+
+    std::thread([=]() { netWorkerServer(rGotData, rValidate); }).detach();
+    std::thread([=]() { kcpNudgeWorkerServer(rDisconnect); }).detach();
+    KCP_LOGGER(false, LOGG_NOTIFY, "KCPNetServer Constructed");
+    return 0;
+}
+
+int KCPNetServer::configureInternal(KCPSettings &rSettings, KCPContext *pCTX) {
     std::lock_guard<std::mutex> lock(mKCPMapMtx);
     int lResult = 0;
     if (mKCPMap.count(pCTX->mKCPSocket)) {
@@ -397,7 +410,7 @@ void KCPNetServer::sendTimePacket(KCPServerData &rServerData) {
 }
 
 // For now the server is updating all connections every 10ms
-void KCPNetServer::kcpNudgeWorkerServer(void (*pDisconnect)(KCPContext *)) {
+void KCPNetServer::kcpNudgeWorkerServer(const std::function<void(KCPContext *)> &rDisconnect) {
     mNudgeThreadRunning = true;
     mNudgeThreadActive = true;
     uint32_t lTimeSleep = 10;
@@ -438,9 +451,9 @@ void KCPNetServer::kcpNudgeWorkerServer(void (*pDisconnect)(KCPContext *)) {
                 // KCP_LOGGER(false, LOGG_NOTIFY,"dead server? " << pKCP->second->mKCPServer->dead_link)
                 bool lDeleteThis = false;
                 if (ltimeOutFlag) {
-                    if (!pKCP->second->mConnectionTimeOut && pDisconnect) {
+                    if (!pKCP->second->mConnectionTimeOut && rDisconnect) {
                         mKCPMapMtx.unlock();
-                        pDisconnect(pKCP->second->mKCPContext.get());
+                        rDisconnect(pKCP->second->mKCPContext.get());
                         mKCPMapMtx.lock();
                         lDeleteThis = true;
                     }
@@ -485,9 +498,10 @@ void KCPNetServer::kcpNudgeWorkerServer(void (*pDisconnect)(KCPContext *)) {
     mNudgeThreadRunning = false;
 }
 
-void KCPNetServer::netWorkerServer(void (*gotData)(const char *, size_t, KCPContext *),
-                                   std::shared_ptr<KCPContext> (*pValidate)(std::string, uint16_t,
-                                                                            std::shared_ptr<KCPContext> &)) {
+void KCPNetServer::netWorkerServer(const std::function<void(const char *, size_t, KCPContext *)>& rGotData,
+                                   const std::function<std::shared_ptr<KCPContext>(std::string,
+                                                                                   uint16_t,
+                                                                                   std::shared_ptr<KCPContext> &)> & rValidate) {
     mNetworkThreadRunning = true;
     kissnet::buffer<KCP_MAX_BYTES> receiveBuffer;
     char lBuffer[KCP_MAX_BYTES];
@@ -527,9 +541,9 @@ void KCPNetServer::netWorkerServer(void (*gotData)(const char *, size_t, KCPCont
                 lx->mObject = mCTX->mObject;
             }
 
-            if (pValidate) {
+            if (rValidate) {
                 mKCPMapMtx.unlock();
-                auto lCTX = pValidate(lFromWho.address, lFromWho.port, lx);
+                auto lCTX = rValidate(lFromWho.address, lFromWho.port, lx);
                 if (lCTX == nullptr) {
                     KCP_LOGGER(false, LOGG_NOTIFY, "Connection rejected")
                     continue;
@@ -550,7 +564,7 @@ void KCPNetServer::netWorkerServer(void (*gotData)(const char *, size_t, KCPCont
             lConnection->mSocket = std::move(lCreateSocket); //Move ownership to this/me
             mKCPMap[lKey] = std::move(lConnection);
             mKCPMapMtx.unlock();
-            configureKCP(lx->mSettings, lx.get());
+            configureInternal(lx->mSettings, lx.get());
             if (*(uint64_t *) receiveBuffer.data() == TIME_PREAMBLE_V1) {
                 KCP_LOGGER(false, LOGG_NOTIFY, "server got time do nothing")
                 continue;
@@ -559,8 +573,8 @@ void KCPNetServer::netWorkerServer(void (*gotData)(const char *, size_t, KCPCont
             ikcp_input(mKCPMap[lKey]->mKCPServer, (const char *) receiveBuffer.data(), received_bytes);
             int lRcv = ikcp_recv(mKCPMap[lKey]->mKCPServer, &lBuffer[0], KCP_MAX_BYTES);
             mKCPMapMtx.unlock();
-            if (lRcv > 0 && gotData) {
-                gotData(&lBuffer[0], lRcv, lx.get());
+            if (lRcv > 0 && rGotData) {
+                rGotData(&lBuffer[0], lRcv, lx.get());
             }
             // The connection is known pass the data to RCP
         } else {
@@ -617,8 +631,8 @@ void KCPNetServer::netWorkerServer(void (*gotData)(const char *, size_t, KCPCont
             ikcp_input(mKCPMap[lKey]->mKCPServer, (const char *) receiveBuffer.data(), received_bytes);
             int lRcv = ikcp_recv(mKCPMap[lKey]->mKCPServer, &lBuffer[0], KCP_MAX_BYTES);
             mKCPMapMtx.unlock();
-            if (lRcv > 0 && gotData) {
-                gotData(&lBuffer[0], lRcv, mKCPMap[lKey]->mKCPContext.get());
+            if (lRcv > 0 && rGotData) {
+                rGotData(&lBuffer[0], lRcv, mKCPMap[lKey]->mKCPContext.get());
             }
         }
     }

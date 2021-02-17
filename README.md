@@ -62,7 +62,8 @@ cmake --build . --config Debug
 //4. Listening interface
 //5. Listening port
 //6. Optional context
-KCPNetServer lKcpServer (gotDataServer,
+KCPNetServer lKcpServer;
+lKcpServer.configureKCP(gotDataServer,
                          noConnectionServer,
                          validateConnection,
                          "127.0.0.1",
@@ -82,34 +83,29 @@ lKcpServer.sendData((const char*)lData.data(), 4000, gRetainThis.get());
 //Client ---
 //----------
 
-//Create the client 
-//1. Got data from server
-//2. Lost connection to server
-//3. Connect to interface
-//4. Connect to port
-//5. Connection ID (Must be set identical on the server see -> validateConnection)
-//6. Optional context
-KCPNetClient lKcpClient (gotDataClient,
-                         noConnectionClient,
-                         "127.0.0.1",
-                         8000,
-                         10,
-                         nullptr);
+//Create the client
+//1. The settings struct
+//2. Got data from server
+//3. Lost connection to server
+//4. Connect to interface
+//5. Connect to port
+//6. Connection ID (Must be set identical on the server see -> validateConnection)
+//7. Optional context
+KCPNetClient lKcpClient;
+
+KCPSettings lSettingsClient;
+configureKCP(lSettingsClient,
+            gotDataClient,
+            noConnectionClient,
+            "127.0.0.1",
+            8000,
+            10,
+            nullptr);
 
 //Send data to the server
 //1. Pointer to the data
 //2. The size of the data
 lKcpClient.sendData((const char*)lData.data(), 4000);
-
-
-//-------------------------------
-//Configuration server/client ---
-//-------------------------------
-
-KCPSettings lSettingsClient;
-if(client or server.configureKCP(lSettingsClient)) {
-    std::cout << "Failed configuring KCP" << std::endl;
-}
 
 
 //Please see KCP documentation for details.

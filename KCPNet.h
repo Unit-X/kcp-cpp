@@ -90,17 +90,18 @@ public:
 
 class KCPNetClient {
 public:
-    explicit KCPNetClient(void (*)(const char*, size_t, KCPContext*),
-                          void (*)(KCPContext*),
-                          const std::string& lIP = "",
-                          uint16_t lPort = 0,
-                          uint32_t lID = 0,
-                          std::shared_ptr<KCPContext> pCTX = nullptr);
+    explicit KCPNetClient();
     virtual ~KCPNetClient();
 
     int sendData(const char* pData, size_t lSize);
 
-    int configureKCP(KCPSettings &rSettings);
+    int configureKCP(KCPSettings &rSettings,
+                     const std::function<void(const char*, size_t, KCPContext*)> &rGotData,
+                     const std::function<void(KCPContext*)> &rDisconnect,
+                     const std::string& lIP = "",
+                     uint16_t lPort = 0,
+                     uint32_t lID = 0,
+                     std::shared_ptr<KCPContext> pCTX = nullptr);
 
     int64_t getNetworkTimeus(); //Network time in us
 
@@ -116,8 +117,8 @@ protected:
     std::shared_ptr<KCPContext> mCTX = nullptr;
 
 private:
-    void netWorkerClient(void (*)(const char*, size_t, KCPContext*));
-    void kcpNudgeWorkerClient(void (*)(KCPContext*));
+    void netWorkerClient(const std::function<void(const char*, size_t, KCPContext*)> &rDisconnect);
+    void kcpNudgeWorkerClient(const std::function<void(KCPContext*)> &rGotData);
 
     std::mutex mKCPNetMtx;
     ikcpcb *mKCP = nullptr; // The KCP handle for client mode
@@ -159,18 +160,18 @@ public:
         int64_t mCurrentCorrection = 0;
     };
 
-    explicit KCPNetServer(void (*)(const char*, size_t, KCPContext*),
-                          void (*)(KCPContext*),
-                          std::shared_ptr<KCPContext> (*)(std::string, uint16_t, std::shared_ptr<KCPContext>&),
-                          const std::string& lIP = "",
-                          uint16_t lport = 0,
-                          std::shared_ptr<KCPContext> pCTX = nullptr);
+    explicit KCPNetServer();
 
     virtual ~KCPNetServer();
 
     int sendData(const char* pData, size_t lSize, KCPContext* pCTX);
 
-    int configureKCP(KCPSettings &rSettings, KCPContext* pCTX);
+    int configureKCP(const std::function<void(const char*, size_t, KCPContext*)> &rGotData,
+                     const std::function<void(KCPContext*)> &rDisconnect,
+                     const std::function<std::shared_ptr<KCPContext>(std::string, uint16_t, std::shared_ptr<KCPContext>&)> &rValidate,
+                     const std::string& lIP = "",
+                     uint16_t lport = 0,
+                     std::shared_ptr<KCPContext> pCTX = nullptr);
 
     // Method used by the bridge function
     void udpOutputServer(const char *pBuf, int lSize, KCPServerData* lCTX) const;
@@ -187,8 +188,10 @@ protected:
     std::shared_ptr<KCPContext> mCTX = nullptr;
 
 private:
-    void netWorkerServer(void (*)(const char*, size_t, KCPContext*), std::shared_ptr<KCPContext> (*)(std::string, uint16_t, std::shared_ptr<KCPContext>&));
-    void kcpNudgeWorkerServer(void (*)(KCPContext*));
+    int configureInternal(KCPSettings &rSettings, KCPContext *pCtx);
+    void netWorkerServer(const std::function<void(const char*, size_t, KCPContext*)> &rGotData,
+                        const std::function<std::shared_ptr<KCPContext>(std::string, uint16_t, std::shared_ptr<KCPContext>&)> &rValidate);
+    void kcpNudgeWorkerServer(const std::function<void(KCPContext*)> &rDisconnect);
     void sendTimePacket(KCPServerData &rServerData);
 
     std::mutex mKCPMapMtx;
