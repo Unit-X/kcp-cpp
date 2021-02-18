@@ -51,8 +51,8 @@
  *  - port_t : a 16 bit unsigned number. Represent a network port number
  *  - endpoint : a structure that represent a location where you need to connect
  *  to. Contains a hostname (as std::string) and a port number (as port_t)
- *  - socket<protocol, ip> : a templated class that represent a socket. Protocol
- *  is either TCP or UDP, and ip is either v4 or v6
+ *  - socket<protocol> : a templated class that represents an ipv4 or ipv6 socket.
+ *  Protocol is either TCP or UDP
  *
  * Kissnet does error handling in 2 ways:
  *
@@ -103,7 +103,7 @@
 #ifndef KISS_NET
 #define KISS_NET
 
- ///Define this to not use exceptions
+///Define this to not use exceptions
 #ifndef KISSNET_NO_EXCEP
 #define kissnet_fatal_error(STR) throw std::runtime_error(STR)
 #else
@@ -138,6 +138,10 @@ using ioctl_setting = u_long;
 using buffsize_t = int;
 
 #define AI_ADDRCONFIG 0x00000400
+
+#ifndef SHUT_RDWR
+#define SHUT_RDWR SD_BOTH
+#endif
 
 // taken from: https://github.com/rxi/dyad/blob/915ae4939529b9aaaf6ebfd2f65c6cff45fc0eac/src/dyad.c#L58
 inline const char* inet_ntop(int af, const void* src, char* dst, socklen_t size)
@@ -298,6 +302,7 @@ namespace kissnet
 #include <sys/ioctl.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <netdb.h>
 #include <unistd.h>
 #include <errno.h>
@@ -317,13 +322,13 @@ using IN_ADDR = in_addr;
 //Wrap them in their WIN32 names
 inline int closesocket(SOCKET in)
 {
-	return close(in);
+    return close(in);
 }
 
 template <typename... Params>
 inline int ioctlsocket(int fd, int request, Params&&... params)
 {
-	return ioctl(fd, request, params...);
+    return ioctl(fd, request, params...);
 }
 
 #define KISSNET_OS_SPECIFIC_PAYLOAD_NAME dummy
@@ -336,7 +341,7 @@ namespace unix_specific
 
 inline int get_error_code()
 {
-	return errno;
+    return errno;
 }
 
 #endif //ifdef WIN32
@@ -352,227 +357,242 @@ inline int get_error_code()
 
 #endif //Kissnet use OpenSSL
 
+#ifndef SOL_TCP
+#define SOL_TCP IPPROTO_TCP
+#endif
+
 ///Main namespace of kissnet
 namespace kissnet
 {
 
-	///Exception-less error handling infrastructure
-	namespace error
-	{
-		static void (*callback)(const std::string&, void* ctx) = nullptr;
-		static void* ctx = nullptr;
-		static bool abortOnFatalError = true;
+    ///Exception-less error handling infrastructure
+    namespace error
+    {
+        static void (*callback)(const std::string&, void* ctx) = nullptr;
+        static void* ctx = nullptr;
+        static bool abortOnFatalError = true;
 
-		inline void handle(const std::string& str)
-		{
-			//if the error::callback function has been provided, call that
-			if (callback)
-			{
-				callback(str, ctx);
-			}
-			//Print error into the standard error output
-			else
-			{
-				fputs(str.c_str(), stderr);
-			}
+        inline void handle(const std::string& str)
+        {
+            //if the error::callback function has been provided, call that
+            if (callback)
+            {
+                callback(str, ctx);
+            }
+                //Print error into the standard error output
+            else
+            {
+                fputs(str.c_str(), stderr);
+            }
 
-			//If the error abort hasn't been deactivated
-			if (abortOnFatalError)
-			{
-				abort();
-			}
-		}
-	}
+            //If the error abort hasn't been deactivated
+            if (abortOnFatalError)
+            {
+                abort();
+            }
+        }
+    }
 
-	///low level protocol used, between TCP\TCP_SSL and UDP
-	enum class protocol {
-		tcp,
-		tcp_ssl,
-		udp
-	};
+    ///low level protocol used, between TCP\TCP_SSL and UDP
+    enum class protocol {
+        tcp,
+        tcp_ssl,
+        udp
+    };
 
-	///Represent ipv4 vs ipv6
-	enum class ip {
-		v4,
-		v6
-	};
+    ///File descriptor set types
+    static constexpr int fds_read = 0x1;
+    static constexpr int fds_write = 0x2;
+    static constexpr int fds_except = 0x4;
 
-	///buffer is an array of std::byte
-	template <size_t buff_size>
-	using buffer = std::array<std::byte, buff_size>;
+    ///buffer is an array of std::byte
+    template <size_t buff_size>
+    using buffer = std::array<std::byte, buff_size>;
 
-	///port_t is the port
-	using port_t = uint16_t;
+    ///port_t is the port
+    using port_t = uint16_t;
 
-	///An endpoint is where the network will connect to (address and port)
-	struct endpoint
-	{
-		///The address to connect to
-		std::string address{};
+    ///An endpoint is where the network will connect to (address and port)
+    struct endpoint
+    {
+        ///The address to connect to
+        std::string address{};
 
-		///The port to connect to
-		port_t port{};
+        ///The port to connect to
+        port_t port{};
 
-		///Default constructor, the endpoint is not valid at that point, but you can set the address/port manually
-		endpoint() = default;
+        ///Default constructor, the endpoint is not valid at that point, but you can set the address/port manually
+        endpoint() = default;
 
-		///Basically create the endpoint with what you give it
-		endpoint(std::string addr, port_t prt) :
-			address{ std::move(addr) }, port{ prt }
-		{}
+        ///Basically create the endpoint with what you give it
+        endpoint(std::string addr, port_t prt) :
+                address{ std::move(addr) }, port{ prt }
+        {}
 
-		static bool is_valid_port_number(unsigned long n)
-		{
-			return n < 1 << 16;
-		}
+        static bool is_valid_port_number(unsigned long n)
+        {
+            return n < 1 << 16;
+        }
 
-		///Construct the endpoint from "address:port"
-		endpoint(std::string addr)
-		{
-			const auto separator = addr.find_last_of(':');
+        ///Construct the endpoint from "address:port"
+        endpoint(std::string addr)
+        {
+            const auto separator = addr.find_last_of(':');
 
-			//Check if input wasn't missformed
-			if (separator == std::string::npos)
-				kissnet_fatal_error("string is not of address:port form");
-			if (separator == addr.size() - 1)
-				kissnet_fatal_error("string has ':' as last character. Expected port number here");
+            //Check if input wasn't missformed
+            if (separator == std::string::npos)
+                kissnet_fatal_error("string is not of address:port form");
+            if (separator == addr.size() - 1)
+                kissnet_fatal_error("string has ':' as last character. Expected port number here");
 
-			//Isolate address
-			address = addr.substr(0, separator);
+            //Isolate address
+            address = addr.substr(0, separator);
 
-			//Read from string as unsigned
-			const auto parsed_port = strtoul(addr.substr(separator + 1).c_str(), nullptr, 10);
+            //Read from string as unsigned
+            const auto parsed_port = strtoul(addr.substr(separator + 1).c_str(), nullptr, 10);
 
-			//In all other cases, port was always given as a port_t type, strongly preventing it to be a number outside of the [0; 65535] range. Here it's not the case.
-			//To detect errors early, check it here :
-			if (!is_valid_port_number(parsed_port))
-				kissnet_fatal_error("Invalid port number " + std::to_string(parsed_port));
+            //In all other cases, port was always given as a port_t type, strongly preventing it to be a number outside of the [0; 65535] range. Here it's not the case.
+            //To detect errors early, check it here :
+            if (!is_valid_port_number(parsed_port))
+                kissnet_fatal_error("Invalid port number " + std::to_string(parsed_port));
 
-			//Store it
-			port = static_cast<port_t>(parsed_port);
-		}
+            //Store it
+            port = static_cast<port_t>(parsed_port);
+        }
 
-		///Construct an endpoint from a SOCKADDR
-		endpoint(SOCKADDR* addr)
-		{
-			switch (addr->sa_family)
-			{
-			case AF_INET: {
-				auto ip_addr = (SOCKADDR_IN*)(addr);
-				address = inet_ntoa(ip_addr->sin_addr);
-				port = ntohs(ip_addr->sin_port);
-			}
-						break;
+        ///Construct an endpoint from a SOCKADDR
+        endpoint(SOCKADDR* addr)
+        {
+            switch (addr->sa_family)
+            {
+                case AF_INET: {
+                    auto ip_addr = (SOCKADDR_IN*)(addr);
+                    address = inet_ntoa(ip_addr->sin_addr);
+                    port = ntohs(ip_addr->sin_port);
+                }
+                    break;
 
-			case AF_INET6: {
-				auto ip_addr = (sockaddr_in6*)(addr);
-				char buffer[INET6_ADDRSTRLEN];
-				address = inet_ntop(AF_INET6, &(ip_addr->sin6_addr), buffer, INET6_ADDRSTRLEN);
-				port = ntohs(ip_addr->sin6_port);
-			}
-						 break;
+                case AF_INET6: {
+                    auto ip_addr = (sockaddr_in6*)(addr);
+                    char buffer[INET6_ADDRSTRLEN];
+                    address = inet_ntop(AF_INET6, &(ip_addr->sin6_addr), buffer, INET6_ADDRSTRLEN);
+                    port = ntohs(ip_addr->sin6_port);
+                }
+                    break;
 
-			default: {
-				kissnet_fatal_error("Trying to construct an endpoint for a protocol familly that is neither AF_INET or AF_INET6");
-			}
-			}
+                default: {
+                    kissnet_fatal_error("Trying to construct an endpoint for a protocol familly that is neither AF_INET or AF_INET6");
+                }
+            }
 
-			if (address.empty())
-				kissnet_fatal_error("Couldn't construct endpoint from sockaddr(_storage) struct");
-		}
-	};
+            if (address.empty())
+                kissnet_fatal_error("Couldn't construct endpoint from sockaddr(_storage) struct");
+        }
+    };
 
-	//Wrap "system calls" here to avoid conflicts with the names used in the socket class
+    //Wrap "system calls" here to avoid conflicts with the names used in the socket class
 
-	///socket()
-	inline auto syscall_socket = [](int af, int type, int protocol) {
-		return ::socket(af, type, protocol);
-	};
+    ///socket()
+    inline auto syscall_socket = [](int af, int type, int protocol) {
+        return ::socket(af, type, protocol);
+    };
 
-	///recv()
-	inline auto syscall_recv = [](SOCKET s, char* buff, buffsize_t len, int flags) {
-		return ::recv(s, buff, len, flags);
-	};
 
-	///send()
-	inline auto syscall_send = [](SOCKET s, const char* buff, buffsize_t len, int flags) {
-		return ::send(s, buff, len, flags);
-	};
+    ///select()
+    inline auto syscall_select = [](int nfds, fd_set* readfds, fd_set* writefds, fd_set* exceptfds, struct timeval* timeout) {
+        return ::select(nfds, readfds, writefds, exceptfds, timeout);
+    };
 
-	///bind()
-	inline auto syscall_bind = [](SOCKET s, const struct sockaddr* name, socklen_t namelen) {
-		return ::bind(s, name, namelen);
-	};
+    ///recv()
+    inline auto syscall_recv = [](SOCKET s, char* buff, buffsize_t len, int flags) {
+        return ::recv(s, buff, len, flags);
+    };
 
-	///connect()
-	inline auto syscall_connect = [](SOCKET s, const struct sockaddr* name, socklen_t namelen) {
-		return ::connect(s, name, namelen);
-	};
+    ///send()
+    inline auto syscall_send = [](SOCKET s, const char* buff, buffsize_t len, int flags) {
+        return ::send(s, buff, len, flags);
+    };
 
-	///listen()
-	inline auto syscall_listen = [](SOCKET s, int backlog) {
-		return ::listen(s, backlog);
-	};
+    ///bind()
+    inline auto syscall_bind = [](SOCKET s, const struct sockaddr* name, socklen_t namelen) {
+        return ::bind(s, name, namelen);
+    };
 
-	///accept()
-	inline auto syscall_accept = [](SOCKET s, struct sockaddr* addr, socklen_t* addrlen) {
-		return ::accept(s, addr, addrlen);
-	};
+    ///connect()
+    inline auto syscall_connect = [](SOCKET s, const struct sockaddr* name, socklen_t namelen) {
+        return ::connect(s, name, namelen);
+    };
 
-	///Represent the status of a socket as returned by a socket operation (send, received). Implicitly convertible to bool
-	struct socket_status
-	{
-		///Enumeration of socket status, with a 1 byte footprint
-		enum values : int8_t {
-			errored = 0x0,
-			valid = 0x1,
-			cleanly_disconnected = 0x2,
-			non_blocking_would_have_blocked = 0x3
+    ///listen()
+    inline auto syscall_listen = [](SOCKET s, int backlog) {
+        return ::listen(s, backlog);
+    };
 
-			/* ... any other info on a "still valid socket" goes here ... */
+    ///accept()
+    inline auto syscall_accept = [](SOCKET s, struct sockaddr* addr, socklen_t* addrlen) {
+        return ::accept(s, addr, addrlen);
+    };
 
-		};
+    ///shutdown()
+    inline auto syscall_shutdown = [](SOCKET s) {
+        return ::shutdown(s, SHUT_RDWR);
+    };
 
-		///Actual value of the socket_status.
-		const values value;
+    ///Represent the status of a socket as returned by a socket operation (send, received). Implicitly convertible to bool
+    struct socket_status
+    {
+        ///Enumeration of socket status, with a 1 byte footprint
+        enum values : int8_t {
+            errored = 0x0,
+            valid = 0x1,
+            cleanly_disconnected = 0x2,
+            non_blocking_would_have_blocked = 0x3,
+            timed_out = 0x4
 
-		///Use the default constructor
-		socket_status() :
-			value{ errored } {}
+            /* ... any other info on a "still valid socket" goes here ... */
 
-		///Construct a "errored/valid" status for a true/false
-		explicit socket_status(bool state) :
-			value(values(state ? valid : errored)) {}
+        };
 
-		socket_status(values v) :
-			value(v) {}
+        ///Actual value of the socket_status.
+        const values value;
 
-		///Copy socket status by default
-		socket_status(const socket_status&) = default;
+        ///Use the default constructor
+        socket_status() :
+                value{ errored } {}
 
-		///Move socket status by default
-		socket_status(socket_status&&) = default;
+        ///Construct a "errored/valid" status for a true/false
+        explicit socket_status(bool state) :
+                value(values(state ? valid : errored)) {}
 
-		///implicitly convert this object to const bool (as the status should not change)
-		operator bool() const
-		{
-			//See the above enum: every value <= 0 correspond to an error, and will return false. Every value > 0 returns true
-			return value > 0;
-		}
+        socket_status(values v) :
+                value(v) {}
 
-		int8_t get_value()
-		{
-			return value;
-		}
+        ///Copy socket status by default
+        socket_status(const socket_status&) = default;
 
-		bool operator==(values v)
-		{
-			return v == value;
-		}
-	};
+        ///Move socket status by default
+        socket_status(socket_status&&) = default;
+
+        ///implicitly convert this object to const bool (as the status should not change)
+        operator bool() const
+        {
+            //See the above enum: every value <= 0 correspond to an error, and will return false. Every value > 0 returns true
+            return value > 0;
+        }
+
+        int8_t get_value()
+        {
+            return value;
+        }
+
+        bool operator==(values v)
+        {
+            return v == value;
+        }
+    };
 
 #ifdef KISSNET_USE_OPENSSL
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
+    #if OPENSSL_VERSION_NUMBER < 0x10100000L
 	static std::shared_ptr <std::vector< std::mutex > > SSL_lock_cs;
 
 	class ThreadSafe_SSL
@@ -642,316 +662,413 @@ namespace kissnet
 	static Initialize_SSL InitializeSSL;
 #endif
 
-	///Class that represent a socket
-	template <protocol sock_proto, ip ipver = ip::v4>
-	class socket
-	{
-		///Represent a number of bytes with a status information. Some of the methods of this class returns this.
-		using bytes_with_status = std::tuple<size_t, socket_status>;
+    ///Class that represent a socket
+    template <protocol sock_proto>
+    class socket
+    {
+        ///Represent a number of bytes with a status information. Some of the methods of this class returns this.
+        using bytes_with_status = std::tuple<size_t, socket_status>;
 
-		///OS specific stuff. payload we have to hold onto for RAII management of the Operating System's socket library (e.g. Windows Socket API WinSock2)
-		KISSNET_OS_SPECIFIC;
+        ///OS specific stuff. payload we have to hold onto for RAII management of the Operating System's socket library (e.g. Windows Socket API WinSock2)
+        KISSNET_OS_SPECIFIC;
 
-		///operatic-system type for a socket object
-		SOCKET sock;
+        ///operatic-system type for a socket object
+        SOCKET sock = INVALID_SOCKET;
 
 #ifdef KISSNET_USE_OPENSSL
-		SSL* pSSL = nullptr;
+        SSL* pSSL = nullptr;
 		SSL_CTX* pContext = nullptr;
 #endif
 
-		///Location where this socket is bound
-		endpoint bind_loc;
+        ///Location where this socket is bound
+        endpoint bind_loc = {};
 
-		///Address information structures
-		addrinfo getaddrinfo_hints{};
-		addrinfo* getaddrinfo_results = nullptr;
+        ///Address information structures
+        addrinfo getaddrinfo_hints = {};
+        addrinfo* getaddrinfo_results = nullptr;
+        addrinfo* socket_addrinfo = nullptr;
 
-		void initialize_addrinfo(int& type, short& family)
-		{
-			int iprotocol{};
-			if constexpr (sock_proto == protocol::tcp || sock_proto == protocol::tcp_ssl)
-			{
-				type = SOCK_STREAM;
-				iprotocol = IPPROTO_TCP;
-			}
+        void initialize_addrinfo()
+        {
+            int type{};
+            int iprotocol{};
+            if constexpr (sock_proto == protocol::tcp || sock_proto == protocol::tcp_ssl)
+            {
+                type = SOCK_STREAM;
+                iprotocol = IPPROTO_TCP;
+            }
 
-			else if constexpr (sock_proto == protocol::udp)
-			{
-				type = SOCK_DGRAM;
-				iprotocol = IPPROTO_UDP;
-			}
+            else if constexpr (sock_proto == protocol::udp)
+            {
+                type = SOCK_DGRAM;
+                iprotocol = IPPROTO_UDP;
+            }
 
-			if constexpr (ipver == ip::v4)
-			{
-				family = AF_INET;
-			}
+            getaddrinfo_hints = {};
+            getaddrinfo_hints.ai_family = AF_UNSPEC;
+            getaddrinfo_hints.ai_socktype = type;
+            getaddrinfo_hints.ai_protocol = iprotocol;
+            getaddrinfo_hints.ai_flags = AI_ADDRCONFIG;
+        }
 
-			else if constexpr (ipver == ip::v6)
-			{
-				family = AF_INET6;
-			}
+        ///Create and connect to socket
+        socket_status connect(addrinfo* addr, int64_t timeout, bool createsocket)
+        {
+            if constexpr (sock_proto == protocol::tcp || sock_proto == protocol::tcp_ssl) //only TCP is a connected protocol
+            {
+                if (createsocket)
+                {
+                    close();
+                    socket_addrinfo = nullptr;
+                    sock = syscall_socket(addr->ai_family, addr->ai_socktype, addr->ai_protocol);
+                }
 
-			(void)memset(&getaddrinfo_hints, 0, sizeof getaddrinfo_hints);
-			getaddrinfo_hints.ai_family = family;
-			getaddrinfo_hints.ai_socktype = type;
-			getaddrinfo_hints.ai_protocol = iprotocol;
-			getaddrinfo_hints.ai_flags = AI_ADDRCONFIG;
-		}
+                if (sock == INVALID_SOCKET)
+                    return socket_status::errored;
 
-		///sockaddr struct
-		sockaddr_storage socket_output = {};
-		sockaddr_storage socket_input = {};
-		socklen_t socket_input_socklen{};
+                socket_addrinfo = addr;
 
-	public:
-		///Construct an invalid socket
-		socket() :
-			sock{ INVALID_SOCKET },
-			getaddrinfo_hints(),
-			socket_input_socklen(0)
-		{
-		}
+                if (timeout > 0)
+                    set_non_blocking(true);
 
-		///socket<> isn't copyable
-		socket(const socket&) = delete;
+                int error = syscall_connect(sock, addr->ai_addr, socklen_t(addr->ai_addrlen));
+                if (error == SOCKET_ERROR)
+                {
+                    error = get_error_code();
+                    if (error == EWOULDBLOCK || error == EAGAIN || error == EINPROGRESS)
+                    {
+                        struct timeval tv;
+                        tv.tv_sec = static_cast<long>(timeout / 1000);
+                        tv.tv_usec = 1000 * static_cast<long>(timeout % 1000);
 
-		///socket<> isn't copyable
-		socket& operator=(const socket&) = delete;
+                        fd_set fd_write, fd_except;;
+                        FD_ZERO(&fd_write);
+                        FD_SET(sock, &fd_write);
+                        FD_ZERO(&fd_except);
+                        FD_SET(sock, &fd_except);
 
-		///Move constructor. socket<> isn't copyable
-		socket(socket&& other) noexcept :
-			getaddrinfo_hints()
-		{
-			KISSNET_OS_SPECIFIC_PAYLOAD_NAME = std::move(other.KISSNET_OS_SPECIFIC_PAYLOAD_NAME);
-			bind_loc = std::move(other.bind_loc);
-			sock = std::move(other.sock);
-			socket_output = std::move(other.socket_output);
-			socket_input = std::move(other.socket_input);
-			socket_input_socklen = std::move(other.socket_input_socklen);
-			getaddrinfo_results = std::move(other.getaddrinfo_results);
+                        int ret = syscall_select(static_cast<int>(sock) + 1, NULL, &fd_write, &fd_except, &tv);
+                        if (ret == -1)
+                            error = get_error_code();
+                        else if (ret == 0)
+                            error = ETIMEDOUT;
+                        else
+                        {
+                            socklen_t errlen = sizeof(error);
+                            if (getsockopt(sock, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&error), &errlen) != 0)
+                                kissnet_fatal_error("getting socket error returned an error");
+                        }
+                    }
+                }
+
+                if (timeout > 0)
+                    set_non_blocking(false);
+
+                if (error == 0)
+                {
+                    return socket_status::valid;
+                }
+                else
+                {
+                    close();
+                    socket_addrinfo = nullptr;
+                    return socket_status::errored;
+                }
+            }
+
+            kissnet_fatal_error("connect called for non-tcp socket");
+        }
+
+        ///sockaddr struct
+        sockaddr_storage socket_input = {};
+        socklen_t socket_input_socklen = 0;
+
+    public:
+        ///Construct an invalid socket
+        socket() = default;
+
+        ///socket<> isn't copyable
+        socket(const socket&) = delete;
+
+        ///socket<> isn't copyable
+        socket& operator=(const socket&) = delete;
+
+        ///Move constructor. socket<> isn't copyable
+        socket(socket&& other) noexcept
+        {
+            KISSNET_OS_SPECIFIC_PAYLOAD_NAME = std::move(other.KISSNET_OS_SPECIFIC_PAYLOAD_NAME);
+            bind_loc = std::move(other.bind_loc);
+            sock = std::move(other.sock);
+            socket_input = std::move(other.socket_input);
+            socket_input_socklen = std::move(other.socket_input_socklen);
+            getaddrinfo_results = std::move(other.getaddrinfo_results);
+            socket_addrinfo = std::move(other.socket_addrinfo);
 
 #ifdef KISSNET_USE_OPENSSL
-			pSSL = other.pSSL;
+            pSSL = other.pSSL;
 			pContext = other.pContext;
 			other.pSSL = nullptr;
 			other.pContext = nullptr;
 #endif
 
-			other.sock = INVALID_SOCKET;
-			other.getaddrinfo_results = nullptr;
-		}
+            other.sock = INVALID_SOCKET;
+            other.getaddrinfo_results = nullptr;
+            other.socket_addrinfo = nullptr;
+        }
 
-		///Move assign operation
-		socket& operator=(socket&& other) noexcept
-		{
+        ///Move assign operation
+        socket& operator=(socket&& other) noexcept
+        {
+            if (this != &other)
+            {
+                if (!(sock < 0) || sock != INVALID_SOCKET)
+                    closesocket(sock);
 
-			if (this != &other)
-			{
-
-				if (!(sock < 0) || sock != INVALID_SOCKET)
-					closesocket(sock);
-
-				KISSNET_OS_SPECIFIC_PAYLOAD_NAME = std::move(other.KISSNET_OS_SPECIFIC_PAYLOAD_NAME);
-				bind_loc = std::move(other.bind_loc);
-				sock = std::move(other.sock);
-				socket_output = std::move(other.socket_output);
-				socket_input = std::move(other.socket_input);
-				socket_input_socklen = std::move(other.socket_input_socklen);
-				getaddrinfo_results = std::move(other.getaddrinfo_results);
+                KISSNET_OS_SPECIFIC_PAYLOAD_NAME = std::move(other.KISSNET_OS_SPECIFIC_PAYLOAD_NAME);
+                bind_loc = std::move(other.bind_loc);
+                sock = std::move(other.sock);
+                socket_input = std::move(other.socket_input);
+                socket_input_socklen = std::move(other.socket_input_socklen);
+                getaddrinfo_results = std::move(other.getaddrinfo_results);
+                socket_addrinfo = std::move(other.socket_addrinfo);
 
 #ifdef KISSNET_USE_OPENSSL
-				pSSL = other.pSSL;
+                pSSL = other.pSSL;
 				pContext = other.pContext;
 				other.pSSL = nullptr;
 				other.pContext = nullptr;
 #endif
 
-				other.sock = INVALID_SOCKET;
-				other.getaddrinfo_results = nullptr;
-			}
-			return *this;
-		}
+                other.sock = INVALID_SOCKET;
+                other.getaddrinfo_results = nullptr;
+                other.socket_addrinfo = nullptr;
+            }
+            return *this;
+        }
 
-		///Return true if the underlying OS provided socket representation (file descriptor, handle...). Both socket are pointing to the same thing in this case
-		bool operator==(const socket& other) const
-		{
-			return sock == other.sock;
-		}
+        ///Return true if the underlying OS provided socket representation (file descriptor, handle...). Both socket are pointing to the same thing in this case
+        bool operator==(const socket& other) const
+        {
+            return sock == other.sock;
+        }
 
-		///Return true if socket is valid. If this is false, you probably shouldn't attempt to send/receive anything, it will probably explode in your face!
-		bool is_valid() const
-		{
-			return sock != INVALID_SOCKET;
-		}
+        ///Return true if socket is valid. If this is false, you probably shouldn't attempt to send/receive anything, it will probably explode in your face!
+        bool is_valid() const
+        {
+            return sock != INVALID_SOCKET;
+        }
 
-		inline operator bool() const
-		{
-			return is_valid();
-		}
+        inline operator bool() const
+        {
+            return is_valid();
+        }
 
-		///Construct socket and (if applicable) connect to the endpoint
-		socket(endpoint bind_to) :
-			bind_loc{ std::move(bind_to) }
-		{
-			//operating system related housekeeping
-			KISSNET_OS_INIT;
+        ///Construct socket and (if applicable) connect to the endpoint
+        socket(endpoint bind_to) :
+                bind_loc{ std::move(bind_to) }
+        {
+            //operating system related housekeeping
+            KISSNET_OS_INIT;
 
-			//Do we use streams or datagrams
-			int type;
-			short family;
-			initialize_addrinfo(type, family);
+            //Do we use streams or datagrams
+            initialize_addrinfo();
 
-			sock = syscall_socket(family, type, 0);
-			if (sock == INVALID_SOCKET)
-			{
-				kissnet_fatal_error("socket() syscall failed!");
-			}
+            if (getaddrinfo(bind_loc.address.c_str(), std::to_string(bind_loc.port).c_str(), &getaddrinfo_hints, &getaddrinfo_results) != 0)
+            {
+                kissnet_fatal_error("getaddrinfo failed!");
+            }
 
-			if (getaddrinfo(bind_loc.address.c_str(), std::to_string(bind_loc.port).c_str(), &getaddrinfo_hints, &getaddrinfo_results) != 0)
-			{
-				//TODO There can be more than one address to attempt to use in the getaddrinfo_results (It's a list). Try to go further down that list in error condition
-				kissnet_fatal_error("getaddrinfo failed!");
-			}
+            for (auto* addr = getaddrinfo_results; addr; addr = addr->ai_next)
+            {
+                sock = syscall_socket(addr->ai_family, addr->ai_socktype, addr->ai_protocol);
+                if (sock != INVALID_SOCKET)
+                {
+                    socket_addrinfo = addr;
+                    break;
+                }
+            }
 
-			//Fill socket_input with 0s
-			memset(static_cast<void*>(&socket_input), 0, sizeof socket_input);
-		}
+            if (sock == INVALID_SOCKET)
+            {
+                kissnet_fatal_error("unable to create socket!");
+            }
+        }
 
-		///Construct a socket from an operating system socket, an additional endpoint to remember from where we are
-		socket(SOCKET native_sock, endpoint bind_to) :
-			sock{ native_sock }, bind_loc(std::move(bind_to)), getaddrinfo_hints{}
-		{
-			KISSNET_OS_INIT;
+        ///Construct a socket from an operating system socket, an additional endpoint to remember from where we are
+        socket(SOCKET native_sock, endpoint bind_to) :
+                sock{ native_sock }, bind_loc(std::move(bind_to))
+        {
+            KISSNET_OS_INIT;
 
-			short family;
-			int type;
+            initialize_addrinfo();
+        }
 
-			initialize_addrinfo(type, family);
-
-			//Fill socket_input with 0s
-			memset(static_cast<void*>(&socket_input), 0, sizeof socket_input);
-		}
-
-		///Set the socket in non blocking mode
-		/// \param state By default "true". If put to false, it will set the socket back into blocking, normal mode
-		void set_non_blocking(bool state = true) const
-		{
+        ///Set the socket in non blocking mode
+        /// \param state By default "true". If put to false, it will set the socket back into blocking, normal mode
+        void set_non_blocking(bool state = true) const
+        {
 #ifdef _WIN32
-			ioctl_setting set = state ? 1 : 0;
+            ioctl_setting set = state ? 1 : 0;
 			if (ioctlsocket(sock, FIONBIO, &set) < 0)
 #else
-			const auto flags = fcntl(sock, F_GETFL, 0);
-			const auto newflags = state ? flags | O_NONBLOCK : flags ^ O_NONBLOCK;
-			if (fcntl(sock, F_SETFL, newflags) < 0)
+            const auto flags = fcntl(sock, F_GETFL, 0);
+            const auto newflags = state ? flags | O_NONBLOCK : flags ^ O_NONBLOCK;
+            if (fcntl(sock, F_SETFL, newflags) < 0)
 #endif
-				kissnet_fatal_error("setting socket to nonblock returned an error");
-		}
+                kissnet_fatal_error("setting socket to nonblock returned an error");
+        }
 
-		///Set the socket option for broadcasts
-		/// \param state By default "true". If put to false, it will disable broadcasts
-		void set_broadcast(bool state = true) const
-		{
-			const int broadcast = state ? 1 : 0;
-			if(setsockopt(sock, SOL_SOCKET, SO_BROADCAST, reinterpret_cast<const char*>(&broadcast), sizeof(broadcast)) != 0)
-				kissnet_fatal_error("setting socket broadcast mode returned an error");
-		}
+        ///Set the socket option for broadcasts
+        /// \param state By default "true". If put to false, it will disable broadcasts
+        void set_broadcast(bool state = true) const
+        {
+            const int broadcast = state ? 1 : 0;
+            if(setsockopt(sock, SOL_SOCKET, SO_BROADCAST, reinterpret_cast<const char*>(&broadcast), sizeof(broadcast)) != 0)
+                kissnet_fatal_error("setting socket broadcast mode returned an error");
+        }
 
-		///Bind socket locally using the address and port of the endpoint
-		void bind()
-		{
+        /// Set the socket option for TCPNoDelay
+        /// \param state By default "true". If put to false, it will disable TCPNoDelay
+        void set_tcp_no_delay(bool state = true) const
+        {
+            if constexpr (sock_proto == protocol::tcp)
+            {
+                const int tcpnodelay = state ? 1 : 0;
+                if (setsockopt(sock, SOL_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&tcpnodelay), sizeof(tcpnodelay)) != 0)
+                    kissnet_fatal_error("setting socket tcpnodelay mode returned an error");
+            }
+        }
 
-			memcpy(&socket_output, getaddrinfo_results->ai_addr, sizeof(SOCKADDR));
+        /// Get socket status
+        socket_status get_status() const
+        {
+            int sockerror = 0;
+            socklen_t errlen = sizeof(sockerror);
+            if (getsockopt(sock, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&sockerror), &errlen) != 0)
+                kissnet_fatal_error("getting socket error returned an error");
 
-			if (syscall_bind(sock, static_cast<SOCKADDR*>(getaddrinfo_results->ai_addr), socklen_t(getaddrinfo_results->ai_addrlen)) == SOCKET_ERROR)
-			{
-				kissnet_fatal_error("bind() failed\n");
-			}
-		}
+            return sockerror == SOCKET_ERROR ? socket_status::errored : socket_status::valid;
+        }
 
-		///(For TCP) connect to the endpoint as client
-		bool connect()
-		{
-			if constexpr (sock_proto == protocol::tcp) //only TCP is a connected protocol
-			{
+        ///Bind socket locally using the address and port of the endpoint
+        void bind()
+        {
+            if (syscall_bind(sock, static_cast<SOCKADDR*>(socket_addrinfo->ai_addr), socklen_t(socket_addrinfo->ai_addrlen)) == SOCKET_ERROR)
+            {
+                kissnet_fatal_error("bind() failed\n");
+            }
+        }
 
-				memcpy(&socket_output, getaddrinfo_results->ai_addr, sizeof(SOCKADDR));
+        ///(For TCP) connect to the endpoint as client
+        socket_status connect(int64_t timeout = 0)
+        {
+            if constexpr (sock_proto == protocol::tcp) //only TCP is a connected protocol
+            {
+                // try to connect to existing native socket, if any.
+                auto curr_addr = socket_addrinfo;
+                if (connect(curr_addr, timeout, false) != socket_status::valid)
+                {
+                    // try to create/connect native socket for one of the other addrinfo, if any
+                    for (auto* addr = getaddrinfo_results; addr; addr = addr->ai_next)
+                    {
+                        if (addr == curr_addr)
+                            continue; // already checked
 
-				return static_cast<bool>(syscall_connect(sock, reinterpret_cast<SOCKADDR*>(&socket_output), sizeof(SOCKADDR)) != SOCKET_ERROR);
-			}
+                        if (connect(addr, timeout, true) == socket_status::valid)
+                            break; // success
+                    }
+                }
+
+                if (sock == INVALID_SOCKET)
+                    kissnet_fatal_error("unable to create connectable socket!");
+
+                return socket_status::valid;
+            }
 #ifdef KISSNET_USE_OPENSSL
-			else if constexpr (sock_proto == protocol::tcp_ssl) //only TCP is a connected protocol
+            else if constexpr (sock_proto == protocol::tcp_ssl) //only TCP is a connected protocol
 			{
-				memcpy(&socket_output, getaddrinfo_results->ai_addr, sizeof(SOCKADDR));
+				// try to connect to existing native socket, if any.
+				auto curr_addr = socket_addrinfo;
+				if (connect(curr_addr, timeout, false) != socket_status::valid)
+				{
+					// try to create/connect native socket for one of the other addrinfo, if any
+					for (auto* addr = getaddrinfo_results; addr; addr = addr->ai_next)
+					{
+						if (addr == curr_addr)
+							continue; // already checked
 
-				if (!(static_cast<bool>(syscall_connect(sock, reinterpret_cast<SOCKADDR*>(&socket_output), sizeof(SOCKADDR)) != SOCKET_ERROR)))
-					return false;
+						if (connect(addr, timeout, true) == socket_status::valid)
+							break; // success
+					}
+				}
+
+				if (sock == INVALID_SOCKET)
+					kissnet_fatal_error("unable to create connectable socket!");
 
 				auto* pMethod = TLSv1_2_client_method();
 
 				pContext = SSL_CTX_new(pMethod);
 				pSSL = SSL_new(pContext);
 				if (!pSSL)
-					return false;
+					return socket_status::errored;
 
 				if (!(static_cast<bool>(SSL_set_fd(pSSL, sock))))
-					return false;
+					return socket_status::errored;
 
 				if (SSL_connect(pSSL) != 1)
-					return false;
+					return socket_status::errored;
 
-				return true;
+				return socket_status::valid;
 			}
 #endif
-		}
+        }
 
-		///(for TCP= setup socket to listen to connection. Need to be called on binded socket, before being able to accept()
-		void listen()
-		{
-			if constexpr (sock_proto == protocol::tcp)
-			{
-				if (syscall_listen(sock, SOMAXCONN) == SOCKET_ERROR)
-				{
-					kissnet_fatal_error("listen failed\n");
-				}
-			}
-		}
+        ///(for TCP= setup socket to listen to connection. Need to be called on binded socket, before being able to accept()
+        void listen()
+        {
+            if constexpr (sock_proto == protocol::tcp)
+            {
+                if (syscall_listen(sock, SOMAXCONN) == SOCKET_ERROR)
+                {
+                    kissnet_fatal_error("listen failed\n");
+                }
+            }
+        }
 
-		///(for TCP) Wait for incoming connection, return socket connect to the client. Blocking.
-		socket accept()
-		{
-			if constexpr (sock_proto != protocol::tcp)
-			{
-				return { INVALID_SOCKET, {} };
-			}
+        ///(for TCP) Wait for incoming connection, return socket connect to the client. Blocking.
+        socket accept()
+        {
+            if constexpr (sock_proto != protocol::tcp)
+            {
+                return { INVALID_SOCKET, {} };
+            }
 
-			SOCKADDR socket_address;
-			SOCKET s;
-			socklen_t size = sizeof socket_address;
+            sockaddr_storage socket_address;
+            SOCKET s;
+            socklen_t size = sizeof socket_address;
 
-			if ((s = syscall_accept(sock, &socket_address, &size)) == INVALID_SOCKET)
-			{
+            if ((s = syscall_accept(sock, reinterpret_cast<SOCKADDR*>(&socket_address), &size)) == INVALID_SOCKET)
+            {
+                const auto error = get_error_code();
+                switch (error)
+                {
+                    case EWOULDBLOCK: //if socket "would have blocked" from the call, ignore
+                    case EINTR:		  //if blocking call got interrupted, ignore;
+                        return {};
+                }
 
-				const auto error = get_error_code();
-				switch (error)
-				{
-				case EWOULDBLOCK: //if socket "would have blocked" from the call, ignore
-				case EINTR:		  //if blocking call got interrupted, ignore;
-					return {};
-				}
+                kissnet_fatal_error("accept() returned an invalid socket\n");
+            }
 
-				kissnet_fatal_error("accept() returned an invalid socket\n");
-			}
+            return { s, endpoint(reinterpret_cast<SOCKADDR*>(&socket_address)) };
+        }
 
-			return { s, endpoint(&socket_address) };
-		}
-
-		void close()
-		{
-			if (sock != INVALID_SOCKET)
-			{
+        void close()
+        {
+            if (sock != INVALID_SOCKET)
+            {
 #ifdef KISSNET_USE_OPENSSL
-				if constexpr (sock_proto == protocol::tcp_ssl)
+                if constexpr (sock_proto == protocol::tcp_ssl)
 				{
 					if (pSSL)
 					{
@@ -964,195 +1081,248 @@ namespace kissnet
 				}
 #endif
 
-				closesocket(sock);
-			}
+                closesocket(sock);
+            }
 
-			sock = INVALID_SOCKET;
-		}
+            sock = INVALID_SOCKET;
+        }
 
-		///Close socket on destruction
-		~socket()
-		{
-			close();
+        void shutdown()
+        {
+            if (sock != INVALID_SOCKET)
+            {
+                syscall_shutdown(sock);
+            }
+        }
 
-			if (getaddrinfo_results)
-				freeaddrinfo(getaddrinfo_results);
-		}
+        ///Close socket on destruction
+        ~socket()
+        {
+            close();
 
-		template <size_t buff_size>
-		bytes_with_status send(const buffer<buff_size>& buff, const size_t length = buff_size)
-		{
-			assert(buff_size >= length);
-			return send(buff.data(), length);
-		}
+            if (getaddrinfo_results)
+                freeaddrinfo(getaddrinfo_results);
+        }
 
-		///Send some bytes through the pipe
-		bytes_with_status send(const std::byte* read_buff, size_t length)
-		{
-			auto received_bytes{ 0 };
-			if constexpr (sock_proto == protocol::tcp)
-			{
-				received_bytes = syscall_send(sock, reinterpret_cast<const char*>(read_buff), static_cast<buffsize_t>(length), 0);
-			}
+        ///Select socket with timeout
+        socket_status select(int fds, int64_t timeout)
+        {
+            fd_set fd_read, fd_write, fd_except;;
+            struct timeval tv;
+
+            tv.tv_sec = static_cast<long>(timeout / 1000);
+            tv.tv_usec = 1000 * static_cast<long>(timeout % 1000);
+
+            if (fds & fds_read)
+            {
+                FD_ZERO(&fd_read);
+                FD_SET(sock, &fd_read);
+            }
+            if (fds & fds_write)
+            {
+                FD_ZERO(&fd_write);
+                FD_SET(sock, &fd_write);
+            }
+            if (fds & fds_except)
+            {
+                FD_ZERO(&fd_except);
+                FD_SET(sock, &fd_except);
+            }
+
+            int ret = syscall_select(static_cast<int>(sock) + 1,
+                                     fds & fds_read ? &fd_read : NULL,
+                                     fds & fds_write ? &fd_write : NULL,
+                                     fds & fds_except ? &fd_except : NULL, &tv);
+            if (ret == -1)
+                return socket_status::errored;
+            else if (ret == 0)
+                return socket_status::timed_out;
+            return socket_status::valid;
+        }
+
+        template <size_t buff_size>
+        bytes_with_status send(const buffer<buff_size>& buff, const size_t length = buff_size)
+        {
+            assert(buff_size >= length);
+            return send(buff.data(), length);
+        }
+
+        ///Send some bytes through the pipe
+        bytes_with_status send(const std::byte* read_buff, size_t length)
+        {
+            auto received_bytes{ 0 };
+            if constexpr (sock_proto == protocol::tcp)
+            {
+                received_bytes = syscall_send(sock, reinterpret_cast<const char*>(read_buff), static_cast<buffsize_t>(length), 0);
+            }
 #ifdef KISSNET_USE_OPENSSL
-			else if constexpr (sock_proto == protocol::tcp_ssl)
+                else if constexpr (sock_proto == protocol::tcp_ssl)
 			{
 				received_bytes = SSL_write(pSSL, reinterpret_cast<const char*>(read_buff), static_cast<buffsize_t>(length));
 			}
 #endif
-			else if constexpr (sock_proto == protocol::udp)
-			{
-				memcpy(&socket_output, getaddrinfo_results->ai_addr, getaddrinfo_results->ai_addrlen);
-				received_bytes = sendto(sock, reinterpret_cast<const char*>(read_buff), static_cast<buffsize_t>(length), 0, static_cast<SOCKADDR*>(getaddrinfo_results->ai_addr), socklen_t(getaddrinfo_results->ai_addrlen));
-			}
+            else if constexpr (sock_proto == protocol::udp)
+            {
+                received_bytes = sendto(sock, reinterpret_cast<const char*>(read_buff), static_cast<buffsize_t>(length), 0, static_cast<SOCKADDR*>(socket_addrinfo->ai_addr), socklen_t(socket_addrinfo->ai_addrlen));
+            }
 
-			if (received_bytes < 0)
-			{
-				if (get_error_code() == EWOULDBLOCK)
-				{
-					return { 0, socket_status::non_blocking_would_have_blocked };
-				}
+            if (received_bytes < 0)
+            {
+                if (get_error_code() == EWOULDBLOCK)
+                {
+                    return { 0, socket_status::non_blocking_would_have_blocked };
+                }
 
-				return { 0, socket_status::errored };
-			}
+                return { 0, socket_status::errored };
+            }
 
-			return { received_bytes, socket_status::valid };
-		}
+            return { received_bytes, socket_status::valid };
+        }
 
-		///receive bytes inside the buffer, return the number of bytes you got. You can choose to write inside the buffer at a specific start offset (in number of bytes)
-		template <size_t buff_size>
-		bytes_with_status recv(buffer<buff_size>& write_buff, size_t start_offset = 0)
-		{
-
-			auto received_bytes = 0;
-			if constexpr (sock_proto == protocol::tcp)
-			{
-				received_bytes = syscall_recv(sock, reinterpret_cast<char*>(write_buff.data()) + start_offset, static_cast<buffsize_t>(buff_size - start_offset), 0);
-			}
+        ///receive bytes inside the buffer, return the number of bytes you got. You can choose to write inside the buffer at a specific start offset (in number of bytes)
+        template <size_t buff_size>
+        bytes_with_status recv(buffer<buff_size>& write_buff, size_t start_offset = 0)
+        {
+            auto received_bytes = 0;
+            if constexpr (sock_proto == protocol::tcp)
+            {
+                received_bytes = syscall_recv(sock, reinterpret_cast<char*>(write_buff.data()) + start_offset, static_cast<buffsize_t>(buff_size - start_offset), 0);
+            }
 #ifdef KISSNET_USE_OPENSSL
-			else if constexpr (sock_proto == protocol::tcp_ssl)
+                else if constexpr (sock_proto == protocol::tcp_ssl)
 			{
 				received_bytes = SSL_read(pSSL, reinterpret_cast<char*>(write_buff.data()) + start_offset, static_cast<buffsize_t>(buff_size - start_offset));
 			}
 #endif
-			else if constexpr (sock_proto == protocol::udp)
-			{
-				socket_input_socklen = sizeof socket_input;
+            else if constexpr (sock_proto == protocol::udp)
+            {
+                socket_input_socklen = sizeof socket_input;
 
-				received_bytes = ::recvfrom(sock, reinterpret_cast<char*>(write_buff.data()) + start_offset, static_cast<buffsize_t>(buff_size - start_offset), 0, reinterpret_cast<sockaddr*>(&socket_input), &socket_input_socklen);
-			}
+                received_bytes = ::recvfrom(sock, reinterpret_cast<char*>(write_buff.data()) + start_offset, static_cast<buffsize_t>(buff_size - start_offset), 0, reinterpret_cast<sockaddr*>(&socket_input), &socket_input_socklen);
+            }
 
-			if (received_bytes < 0)
-			{
-				const auto error = get_error_code();
-				if (error == EWOULDBLOCK) {
-                    return {0, socket_status::non_blocking_would_have_blocked};
+            if (received_bytes < 0)
+            {
+                const auto error = get_error_code();
+                if (error == EWOULDBLOCK)
+                    return { 0, socket_status::non_blocking_would_have_blocked };
+                if (error == EAGAIN)
+                    return { 0, socket_status::non_blocking_would_have_blocked };
+                return { 0, socket_status::errored };
+            }
+
+            if (received_bytes == 0)
+            {
+                return { received_bytes, socket_status::cleanly_disconnected };
+            }
+
+            return { size_t(received_bytes), socket_status::valid };
+        }
+
+        ///receive up-to len bytes inside the memory location pointed by buffer
+        bytes_with_status recv(std::byte* buffer, size_t len, bool wait = true)
+        {
+            auto received_bytes = 0;
+            if constexpr (sock_proto == protocol::tcp)
+            {
+                int flags;
+                if (wait)
+                    flags = MSG_WAITALL;
+                else
+                {
+#ifdef _WIN32
+                    flags = 0; // MSG_DONTWAIT not avail on windows, need to make socket nonblockingto emulate
+					set_non_blocking(true);
+#else
+                    flags = MSG_DONTWAIT;
+#endif
                 }
-				if (error == EAGAIN) {
-                    return {0, socket_status::non_blocking_would_have_blocked};
-                }
-				return { 0, socket_status::errored };
-			}
-
-			if (received_bytes == 0)
-			{
-				return { received_bytes, socket_status::cleanly_disconnected };
-			}
-
-			return { size_t(received_bytes), socket_status::valid };
-		}
-
-		///receive up-to len bytes inside the memory location pointed by buffer
-		bytes_with_status recv(std::byte* buffer, size_t len)
-		{
-			auto received_bytes = 0;
-			if constexpr (sock_proto == protocol::tcp)
-			{
-				received_bytes = syscall_recv(sock, reinterpret_cast<char*>(buffer), static_cast<buffsize_t>(len), 0);
-			}
+                received_bytes = syscall_recv(sock, reinterpret_cast<char*>(buffer), static_cast<buffsize_t>(len), flags);
+#ifdef _WIN32
+                set_non_blocking(false);
+#endif
+            }
 
 #ifdef KISSNET_USE_OPENSSL
-			else if constexpr (sock_proto == protocol::tcp_ssl)
+                else if constexpr (sock_proto == protocol::tcp_ssl)
 			{
 				received_bytes = SSL_read(pSSL, reinterpret_cast<char*>(buffer), static_cast<buffsize_t>(len));
 			}
 #endif
 
-			else if constexpr (sock_proto == protocol::udp)
-			{
-				socket_input_socklen = sizeof socket_input;
+            else if constexpr (sock_proto == protocol::udp)
+            {
+                socket_input_socklen = sizeof socket_input;
 
-				received_bytes = ::recvfrom(sock, reinterpret_cast<char*>(buffer), static_cast<buffsize_t>(len), 0, reinterpret_cast<sockaddr*>(&socket_input), &socket_input_socklen);
-			}
+                received_bytes = ::recvfrom(sock, reinterpret_cast<char*>(buffer), static_cast<buffsize_t>(len), 0, reinterpret_cast<sockaddr*>(&socket_input), &socket_input_socklen);
+            }
 
-			if (received_bytes < 0)
-			{
-				const auto error = get_error_code();
-				if (error == EWOULDBLOCK)
-					return { 0, socket_status::non_blocking_would_have_blocked };
-				if (error == EAGAIN)
-					return { 0, socket_status::non_blocking_would_have_blocked };
-				return { 0, socket_status::errored };
-			}
+            if (received_bytes < 0)
+            {
+                const auto error = get_error_code();
+                if (error == EWOULDBLOCK)
+                    return { 0, socket_status::non_blocking_would_have_blocked };
+                if (error == EAGAIN)
+                    return { 0, socket_status::non_blocking_would_have_blocked };
+                return { 0, socket_status::errored };
+            }
 
-			if (received_bytes == 0)
-			{
-				return { received_bytes, socket_status::cleanly_disconnected };
-			}
+            if (received_bytes == 0)
+            {
+                return { received_bytes, socket_status::cleanly_disconnected };
+            }
 
-			return { size_t(received_bytes), socket_status::valid };
-		}
+            return { size_t(received_bytes), socket_status::valid };
+        }
 
-		///Return the endpoint where this socket is talking to
-		endpoint get_bind_loc() const
-		{
-			return bind_loc;
-		}
+        ///Return the endpoint where this socket is talking to
+        endpoint get_bind_loc() const
+        {
+            return bind_loc;
+        }
 
-		///Return an endpoint that originated the data in the last recv
-		endpoint get_recv_endpoint() const
-		{
-			if constexpr (sock_proto == protocol::tcp)
-			{
-				return get_bind_loc();
-			}
-			if constexpr (sock_proto == protocol::udp)
-			{
-				return { (sockaddr*)&socket_input };
-			}
-		}
+        ///Return an endpoint that originated the data in the last recv
+        endpoint get_recv_endpoint() const
+        {
+            if constexpr (sock_proto == protocol::tcp)
+            {
+                return get_bind_loc();
+            }
+            if constexpr (sock_proto == protocol::udp)
+            {
+                return { (sockaddr*)&socket_input };
+            }
+        }
 
-		///Return the number of bytes available inside the socket
-		size_t bytes_available() const
-		{
-			static ioctl_setting size = 0;
-			const auto status = ioctlsocket(sock, FIONREAD, &size);
+        ///Return the number of bytes available inside the socket
+        size_t bytes_available() const
+        {
+            static ioctl_setting size = 0;
+            const auto status = ioctlsocket(sock, FIONREAD, &size);
 
-			if (status < 0)
-			{
-				kissnet_fatal_error("ioctlsocket status is negative when getting FIONREAD\n");
-			}
+            if (status < 0)
+            {
+                kissnet_fatal_error("ioctlsocket status is negative when getting FIONREAD\n");
+            }
 
-			return size > 0 ? size : 0;
-		}
+            return size > 0 ? size : 0;
+        }
 
-		///Return the protocol used by this socket
-		static protocol get_protocol()
-		{
-			return sock_proto;
-		}
-	};
+        ///Return the protocol used by this socket
+        static protocol get_protocol()
+        {
+            return sock_proto;
+        }
+    };
 
-	///Alias for socket<protocol::tcp>
-	using tcp_socket = socket<protocol::tcp>;
-	///Alias for socket<protocol::tcp_ssl>
+    ///Alias for socket<protocol::tcp>
+    using tcp_socket = socket<protocol::tcp>;
+#ifdef KISSNET_USE_OPENSSL
+    ///Alias for socket<protocol::tcp_ssl>
 	using tcp_ssl_socket = socket<protocol::tcp_ssl>;
-	///Alias for socket<protocol::udp>
-	using udp_socket = socket<protocol::udp>;
-	///IPV6 version of a TCP socket
-	using tcp_socket_v6 = socket<protocol::tcp, ip::v6>;
-	///IPV6 version of an UDP socket
-	using udp_socket_v6 = socket<protocol::udp, ip::v6>;
+#endif //KISSNET_USE_OPENSSL
+    ///Alias for socket<protocol::udp>
+    using udp_socket = socket<protocol::udp>;
 }
 
 //cleanup preprocessor macros

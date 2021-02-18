@@ -71,7 +71,7 @@ public:
 // Optional context passed to the callbacks
 class KCPContext {
 public:
-    explicit KCPContext (uint64_t lKey): mKCPSocket(lKey) {
+    explicit KCPContext (std::string lKey): mKCPSocket(lKey) {
 
     }
     std::any mObject = nullptr;         // For safe object lifecycles
@@ -79,7 +79,7 @@ public:
     uint64_t mValue = 0;                // Generic 64-bit variable
     uint64_t mID = 10;                  //KCP ID to be used
     KCPSettings mSettings;
-    uint64_t mKCPSocket = 0;
+    std::string mKCPSocket;
 };
 
 //------------------------------------------------------------------------------------------
@@ -195,7 +195,7 @@ private:
     void sendTimePacket(KCPServerData &rServerData);
 
     std::mutex mKCPMapMtx;
-    std::unordered_map<uint64_t, std::unique_ptr<KCPServerData>> mKCPMap;
+    std::unordered_map<std::string, std::unique_ptr<KCPServerData>> mKCPMap;
     kissnet::udp_socket mKissnetSocket;
     bool mNetworkThreadRunning = false;
     bool mNudgeThreadRunning = false;

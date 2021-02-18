@@ -517,19 +517,9 @@ void KCPNetServer::netWorkerServer(const std::function<void(const char *, size_t
         }
 
         if (mDropAll) continue;
-        // Who did send me data? Generate a unique key where (ip:port) a.b.c.d:e becomes a (broken down to uiny8_t) uint64_t 00abcdee
-        kissnet::endpoint lFromWho = mKissnetSocket.get_recv_endpoint();
-        std::stringstream lS(lFromWho.address);
-        int lA, lB, lC, lD; // to store the 4 ints from the ip string
-        char lCh; // to temporarily store the '.'
-        // or + shift it all together
-        lS >> lA >> lCh >> lB >> lCh >> lC >> lCh >> lD;
 
-        // Optimize?
-        uint64_t lKey =
-                (uint64_t) lA << (uint64_t) 40 | (uint64_t) lB << (uint64_t) 32 | (uint64_t) lC << (uint64_t) 24 |
-                (uint64_t) lD << (uint64_t) 16 |
-                (uint64_t) lFromWho.port;
+        kissnet::endpoint lFromWho = mKissnetSocket.get_recv_endpoint();
+        std::string lKey =  lFromWho.address + ":" + std::to_string(lFromWho.port);
 
         mKCPMapMtx.lock();
         if (!mKCPMap.count(lKey)) {

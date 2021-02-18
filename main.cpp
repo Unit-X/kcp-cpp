@@ -51,13 +51,13 @@ int main() {
     std::generate(lData.begin(), lData.end(), [n = 0]() mutable { return n++; });
 
     // Create the server and register the receive data callback and the validate connection callback
-    std::shared_ptr<KCPContext> lx = std::make_shared<KCPContext>(0);
+    std::shared_ptr<KCPContext> lx = std::make_shared<KCPContext>("");
     lx->mObject = std::make_shared<TestClass>();
     KCPNetServer lKcpServer;
     if (lKcpServer.configureKCP(gotDataServer,
                             noConnectionServer,
                             validateConnection,
-                            "127.0.0.1",
+                            "::1",
                             8000,
                             lx)) {
         std::cout << "Failed to configure the KCP Server" << std::endl;
@@ -65,12 +65,11 @@ int main() {
 
     KCPNetClient lKcpClient;
 
-
     KCPSettings lSettingsClient;
     if(lKcpClient.configureKCP(lSettingsClient,
                                gotDataClient,
                                noConnectionClient,
-                               "127.0.0.1",
+                               "::1",
                                8000,
                                10,
                                nullptr)) {
