@@ -43,11 +43,8 @@ KCPNetClient::KCPNetClient() {
 KCPNetClient::~KCPNetClient() {
     uint32_t lDeadLock;
     // Signal close netWorker and nudge thread
-#if defined(__linux__)
-    mKissnetSocket.shutdown(); // End net thread linux
-#elif __APPLE__
-    mKissnetSocket.close(); // End net thread apple
-#endif
+    mKissnetSocket.shutdown(); // End net thread
+    mKissnetSocket.close(); // End net thread
     mNudgeThreadActive = false; // End nudge thread
 
     // Join network thread
@@ -306,12 +303,10 @@ KCPNetServer::KCPNetServer() {
 KCPNetServer::~KCPNetServer() {
     uint32_t lDeadLock;
     // Signal close netWorker and nudge thread
-#if defined(__linux__)
-    mKissnetSocket.shutdown(); // End net thread linux
-#elif __APPLE__
-    mKissnetSocket.close(); // End net thread apple
-#endif
+    mKissnetSocket.shutdown(); // End net thread
+    mKissnetSocket.close(); // End net thread
     mNudgeThreadActive = false; // End nudge thread
+    
     // Join network thread
     if (mNetworkThreadRunning) {
         lDeadLock = 10;
