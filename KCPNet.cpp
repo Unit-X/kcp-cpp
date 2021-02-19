@@ -53,6 +53,7 @@ KCPNetClient::~KCPNetClient() {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
             if (!--lDeadLock) {
                 KCP_LOGGER(true, LOGG_FATAL, "Client network is not ending will terminate anyway")
+                break;
             }
         }
     }
@@ -63,6 +64,7 @@ KCPNetClient::~KCPNetClient() {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
         if (!--lDeadLock) {
             KCP_LOGGER(true, LOGG_FATAL, "Client nudge thread not ending will terminate anyway")
+            break;
         }
     }
     std::lock_guard<std::mutex> lock(mKCPNetMtx);
@@ -300,7 +302,8 @@ KCPNetServer::KCPNetServer() {
 KCPNetServer::~KCPNetServer() {
     uint32_t lDeadLock;
     // Signal close netWorker and nudge thread
-    mKissnetSocket.close(); // End net thread
+    mKissnetSocket.close(); // Close the server socket
+    mKissnetSocket.shutdown(); // End net thread
     mNudgeThreadActive = false; // End nudge thread
     // Join network thread
     if (mNetworkThreadRunning) {
@@ -309,6 +312,7 @@ KCPNetServer::~KCPNetServer() {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
             if (!--lDeadLock) {
                 KCP_LOGGER(true, LOGG_FATAL, "Server net thread is not ending will terminate anyway")
+                break;
             }
         }
     }
@@ -319,13 +323,12 @@ KCPNetServer::~KCPNetServer() {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
         if (!--lDeadLock) {
             KCP_LOGGER(true, LOGG_FATAL, "Nudge thread not ending will terminate anyway")
+            break;
         }
     }
 
     std::lock_guard<std::mutex> lock(mKCPMapMtx);
-    for (const auto &rKCP: mKCPMap) {
-        if (rKCP.second->mKCPServer) ikcp_release(rKCP.second->mKCPServer);
-    }
+    mKCPMap.clear();
     KCP_LOGGER(false, LOGG_NOTIFY, "KCPNetServer Destruct")
 }
 

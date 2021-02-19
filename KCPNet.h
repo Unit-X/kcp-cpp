@@ -146,7 +146,7 @@ public:
     class KCPServerData {
     public:
         virtual ~KCPServerData() {
-            ikcp_release(mKCPServer);
+            if (mKCPServer) ikcp_release(mKCPServer);
         }
         KCPNetServer* mWeakKCPNetServer = nullptr;
         ikcpcb* mKCPServer = nullptr;
