@@ -555,8 +555,7 @@ void KCPNetServer::netWorkerServer(const std::function<void(const char *, size_t
                 throw std::runtime_error("Failed creating KCP");
             }
             lConnection->mKCPServer->output = udp_output_server;
-            kissnet::udp_socket lCreateSocket(kissnet::endpoint(lFromWho.address, lFromWho.port));
-            lConnection->mSocket = std::move(lCreateSocket); //Move ownership to this/me
+            lConnection->mSocket = mKissnetSocket.get_recv_endpoint();
             mKCPMap[lKey] = std::move(lConnection);
             mKCPMapMtx.unlock();
             configureInternal(lx->mSettings, lx.get());
