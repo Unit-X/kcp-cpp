@@ -18,6 +18,7 @@ include(ExternalProject)
 ExternalProject_Add(project_kcp
         GIT_REPOSITORY https://github.com/skywind3000/kcp.git
         GIT_SUBMODULES ""
+        GIT_TAG 77a4f85ae69f03fd9008b799ee99bb1f098befc5
         UPDATE_COMMAND ""
         SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/kcp
         BINARY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/kcp
