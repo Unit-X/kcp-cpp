@@ -62,7 +62,7 @@ public:
     bool mNoDelay = false;  // No delay mode. False: Off / True: On.
     int  mInterval = 100;   // KCP update interval in ms
     int  mResend = 0;       // Retransmit when missed mResend number ACK (Default value is 0)
-    bool mFlow = false;     // Flow control, False: Off / True: On.
+    bool mFlow = true;      // Flow control, False: Off / True: On.
     int  mMtu = 1472;       // Maximum payload in a single UDP datagram
     int  mSndWnd = 32;      // Send window size
     int  mRcvWnd = 32;      // Receive window size //The doc says 32 the code says 128

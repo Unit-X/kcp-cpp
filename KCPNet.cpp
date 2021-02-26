@@ -117,7 +117,7 @@ int KCPNetClient::configureKCP(KCPSettings &rSettings,
 
     std::lock_guard<std::mutex> lock(mKCPNetMtx);
     int lResult;
-    lResult = ikcp_nodelay(mKCP, rSettings.mNoDelay, rSettings.mInterval, rSettings.mResend, rSettings.mFlow);
+    lResult = ikcp_nodelay(mKCP, rSettings.mNoDelay, rSettings.mInterval, rSettings.mResend, !rSettings.mFlow);
     if (lResult) {
         KCP_LOGGER(false, LOGG_ERROR, "ikcp_nodelay client failed.")
         return lResult;
@@ -377,7 +377,7 @@ int KCPNetServer::configureInternal(KCPSettings &rSettings, KCPContext *pCTX) {
     int lResult = 0;
     if (mKCPMap.count(pCTX->mKCPSocket)) {
         lResult = ikcp_nodelay(mKCPMap[pCTX->mKCPSocket]->mKCPServer, rSettings.mNoDelay, rSettings.mInterval,
-                               rSettings.mResend, rSettings.mFlow);
+                               rSettings.mResend, !rSettings.mFlow);
         if (lResult) {
             KCP_LOGGER(false, LOGG_ERROR, "ikcp_nodelay server failed.")
             return lResult;
