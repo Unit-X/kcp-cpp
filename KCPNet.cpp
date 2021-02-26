@@ -288,9 +288,9 @@ int udp_output_server(const char *pBuf, int lSize, ikcpcb *pKCP, void *pCTX) {
     return 0;
 }
 
-void KCPNetServer::udpOutputServer(const char *pBuf, int lSize, KCPServerData *lCTX) const {
+void KCPNetServer::udpOutputServer(const char *pBuf, int lSize, KCPServerData *lCTX) {
     if (mDropAll) return;
-    auto[lSentBytes, lStatus] = lCTX->mSocket.send((const std::byte *) pBuf, lSize);
+    auto[lSentBytes, lStatus] = mKissnetSocket.send((const std::byte *) pBuf, lSize, lCTX->mDestination, lCTX->mDestinationSize);
     if (lSentBytes != lSize || lStatus != kissnet::socket_status::valid) {
         KCP_LOGGER(false, LOGG_NOTIFY, "Server failed sending data")
     }
@@ -408,7 +408,7 @@ void KCPNetServer::sendTimePacket(KCPServerData &rServerData) {
         lTimePacket.correctionActive = 1;
         lTimePacket.correction = rServerData.mCurrentCorrection;
     }
-    auto[lSentBytes, lStatus] = rServerData.mSocket.send((const std::byte *) &lTimePacket, sizeof(lTimePacket));
+    auto[lSentBytes, lStatus] = mKissnetSocket.send((const std::byte *) &lTimePacket, sizeof(lTimePacket), rServerData.mDestination, rServerData.mDestinationSize);
     if (lSentBytes != sizeof(lTimePacket) || lStatus != kissnet::socket_status::valid) {
         KCP_LOGGER(false, LOGG_NOTIFY, "Server failed sending timing data")
     }
@@ -555,7 +555,22 @@ void KCPNetServer::netWorkerServer(const std::function<void(const char *, size_t
                 throw std::runtime_error("Failed creating KCP");
             }
             lConnection->mKCPServer->output = udp_output_server;
-            lConnection->mSocket = mKissnetSocket.get_recv_endpoint();
+
+            if (lFromWho.isIPv6) {
+                lConnection->mDestinationV6.sin6_family = AF_INET6;
+                lConnection->mDestinationV6.sin6_port = htons(lFromWho.port);
+                inet_pton(AF_INET6, lFromWho.address.c_str(), &(lConnection->mDestinationV6.sin6_addr));
+                lConnection->mDestination = (sockaddr*)&lConnection->mDestinationV6;
+                lConnection->mDestinationSize = sizeof(lConnection->mDestinationV6);
+
+            } else {
+                lConnection->mDestinationV4.sin_family = AF_INET;
+                lConnection->mDestinationV4.sin_port = htons(lFromWho.port);
+                inet_pton(AF_INET, lFromWho.address.c_str(), &(lConnection->mDestinationV4.sin_addr));
+                lConnection->mDestination = (sockaddr*)&lConnection->mDestinationV4;
+                lConnection->mDestinationSize = sizeof(lConnection->mDestinationV4);
+            }
+
             mKCPMap[lKey] = std::move(lConnection);
             mKCPMapMtx.unlock();
             configureInternal(lx->mSettings, lx.get());

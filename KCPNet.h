@@ -151,9 +151,12 @@ public:
         KCPNetServer* mWeakKCPNetServer = nullptr;
         ikcpcb* mKCPServer = nullptr;
         std::shared_ptr<KCPContext> mKCPContext = nullptr;
-        kissnet::udp_socket mSocket;
-        uint64_t mConnectionTimeOut = HEART_BEAT_TIME_OUT;
+        sockaddr_in mDestinationV4 = {0};
+        sockaddr_in6 mDestinationV6 = {0};
+        sockaddr* mDestination = nullptr;
+        socklen_t mDestinationSize = 0;
 
+        uint64_t mConnectionTimeOut = HEART_BEAT_TIME_OUT;
         bool mGotStableTime = false;
         bool mClientGotCorrection = false;
         std::vector<std::pair<int64_t, int64_t>> mListOfDelayAndCompensation;
@@ -174,7 +177,7 @@ public:
                      std::shared_ptr<KCPContext> pCTX = nullptr);
 
     // Method used by the bridge function
-    void udpOutputServer(const char *pBuf, int lSize, KCPServerData* lCTX) const;
+    void udpOutputServer(const char *pBuf, int lSize, KCPServerData* lCTX);
 
     // delete copy and move constructors and assign operators
     KCPNetServer(KCPNetServer const &) = delete;             // Copy construct

@@ -415,6 +415,8 @@ namespace kissnet
     ///An endpoint is where the network will connect to (address and port)
     struct endpoint
     {
+        bool isIPv6 = false;
+
         ///The address to connect to
         std::string address{};
 
@@ -466,6 +468,7 @@ namespace kissnet
             switch (addr->sa_family)
             {
                 case AF_INET: {
+                    isIPv6 = false;
                     auto ip_addr = (SOCKADDR_IN*)(addr);
                     address = inet_ntoa(ip_addr->sin_addr);
                     port = ntohs(ip_addr->sin_port);
@@ -473,6 +476,7 @@ namespace kissnet
                     break;
 
                 case AF_INET6: {
+                    isIPv6 = true;
                     auto ip_addr = (sockaddr_in6*)(addr);
                     char buffer[INET6_ADDRSTRLEN];
                     address = inet_ntop(AF_INET6, &(ip_addr->sin6_addr), buffer, INET6_ADDRSTRLEN);
@@ -1148,7 +1152,7 @@ namespace kissnet
         }
 
         ///Send some bytes through the pipe
-        bytes_with_status send(const std::byte* read_buff, size_t length)
+        bytes_with_status send(const std::byte* read_buff, size_t length, sockaddr* dest_sock = nullptr, socklen_t dest_sock_size = 0)
         {
             auto received_bytes{ 0 };
             if constexpr (sock_proto == protocol::tcp)
@@ -1163,7 +1167,11 @@ namespace kissnet
 #endif
             else if constexpr (sock_proto == protocol::udp)
             {
-                received_bytes = sendto(sock, reinterpret_cast<const char*>(read_buff), static_cast<buffsize_t>(length), 0, static_cast<SOCKADDR*>(socket_addrinfo->ai_addr), socklen_t(socket_addrinfo->ai_addrlen));
+                if (dest_sock) {
+                    received_bytes = sendto(sock, reinterpret_cast<const char*>(read_buff), static_cast<buffsize_t>(length), 0,  dest_sock, dest_sock_size);
+                } else {
+                    received_bytes = sendto(sock, reinterpret_cast<const char*>(read_buff), static_cast<buffsize_t>(length), 0, static_cast<SOCKADDR*>(socket_addrinfo->ai_addr), socklen_t(socket_addrinfo->ai_addrlen));
+                }
             }
 
             if (received_bytes < 0)
