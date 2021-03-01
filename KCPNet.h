@@ -60,7 +60,7 @@ static_assert(sizeof(KCPTimePacket) == 56, "KCPTimePacket is not the expected si
 class KCPSettings {
 public:
     bool mNoDelay = false;  // No delay mode. False: Off / True: On.
-    int  mInterval = 100;   // KCP update interval in ms
+    int  mInterval = 10;   // KCP update interval in ms
     int  mResend = 0;       // Retransmit when missed mResend number ACK (Default value is 0)
     bool mFlow = true;      // Flow control, False: Off / True: On.
     int  mMtu = 1472;       // Maximum payload in a single UDP datagram

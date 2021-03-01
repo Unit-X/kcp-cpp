@@ -6,6 +6,8 @@
 
 std::shared_ptr<KCPContext> gRetainThis;
 
+int gPacketNum = 0;
+
 // Validate this connection
 // Return a nullptr if you want to reject the new connection
 // If you want to retain this connection context this is the place to do that. All other calls use the raw pointer to the object.
@@ -25,7 +27,7 @@ std::shared_ptr<KCPContext> validateConnection(std::string lIP, uint16_t lPort, 
 }
 
 void gotDataServer(const char* pData, size_t lSize, KCPContext* pCTX) {
-    std::cout << "The server got -> " << unsigned(lSize) << " bytes of data" << std::endl;
+    std::cout << "The server got -> " << unsigned(lSize) << " bytes of data. pk num -> " << gPacketNum++ << std::endl;
 }
 
 void gotDataClient(const char* pData, size_t lSize, KCPContext* pCTX) {
@@ -75,6 +77,17 @@ int main() {
                                nullptr)) {
         std::cout << "Failed to configure the KCP Client" << std::endl;
     }
+
+/*
+    for ( uint64_t i=0 ; i<10000 ; i++ ) {
+        *(uint64_t*)lData.data() = i;
+        lKcpClient.sendData((const char*)lData.data(), 1000);
+        std::cout << "Pushed -> " << unsigned(i) << std::endl;
+        std::this_thread::sleep_for(std::chrono::milliseconds (1));
+    }
+    std::cout << "STOP SENDING" << std::endl;
+    std::this_thread::sleep_for(std::chrono::seconds (2));
+*/
 
     lKcpClient.sendData((const char*)lData.data(), 4000);
 
