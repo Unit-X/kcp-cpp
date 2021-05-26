@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.10)
 project(kcp_cpp)
 
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 find_package (Threads REQUIRED)
 
 #If no build type is set then force Release
