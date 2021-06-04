@@ -214,7 +214,10 @@ void KCPNetClient::kcpNudgeWorkerClient(const std::function<void(KCPContext *)> 
         //KCP_LOGGER(false, LOGG_NOTIFY,"dead client? " << mKCP->dead_link)
         //KCP_LOGGER(false, LOGG_NOTIFY,"k " << lTimeSleep << " " << lTimeNow)
     }
-    KCP_LOGGER(false, LOGG_NOTIFY, "kcpNudgeWorkerClient quitting")
+    KCP_LOGGER(false, LOGG_NOTIFY, "kcpNudgeWorkerClient quitting");
+    if (rDisconnect) {
+        rDisconnect(mCTX.get());
+    }
     mNudgeThreadRunning = false;
 }
 
@@ -499,7 +502,12 @@ void KCPNetServer::kcpNudgeWorkerServer(const std::function<void(KCPContext *)> 
         }
 
     }
-    KCP_LOGGER(false, LOGG_NOTIFY, "kcpNudgeWorker quitting")
+    KCP_LOGGER(false, LOGG_NOTIFY, "kcpNudgeWorker quitting");
+    for (auto pKCP = mKCPMap.cbegin(); pKCP != mKCPMap.cend(); ++pKCP) {
+        if (rDisconnect) {
+            rDisconnect(pKCP->second->mKCPContext.get());
+        }
+    }
     mNudgeThreadRunning = false;
 }
 
@@ -513,12 +521,8 @@ void KCPNetServer::netWorkerServer(const std::function<void(const char *, size_t
     while (true) {
         auto[received_bytes, status] = mKissnetSocket.recv(receiveBuffer);
         if (!received_bytes || status != kissnet::socket_status::valid) {
-            KCP_LOGGER(false, LOGG_NOTIFY, "serverWorker quitting")
+            KCP_LOGGER(false, LOGG_NOTIFY, "serverWorker quitting");
             break;
-        }
-        if (status == kissnet::socket_status::non_blocking_would_have_blocked) {
-            KCP_LOGGER(false, LOGG_NOTIFY, "non_blocking_would_have_blocked")
-            continue;
         }
 
         if (mDropAll) continue;
