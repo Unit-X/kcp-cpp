@@ -14,6 +14,6 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: CMake set-up
-      run: cmake --config Release .
+      run: cmake -DCMAKE_BUILD_TYPE=Release .
     - name: make
       run: cmake --build . --config Release
