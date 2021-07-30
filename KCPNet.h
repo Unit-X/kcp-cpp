@@ -151,10 +151,7 @@ public:
         KCPNetServer* mWeakKCPNetServer = nullptr;
         ikcpcb* mKCPServer = nullptr;
         std::shared_ptr<KCPContext> mKCPContext = nullptr;
-        sockaddr_in mDestinationV4 = {0};
-        sockaddr_in6 mDestinationV6 = {0};
-        sockaddr* mDestination = nullptr;
-        socklen_t mDestinationSize = 0;
+        kissnet::addr_collection mDestination;
 
         uint64_t mConnectionTimeOut = HEART_BEAT_TIME_OUT;
         bool mGotStableTime = false;

@@ -1,2 +1,4 @@
 /kcp/
 build/*
+.idea
+cmake-build*

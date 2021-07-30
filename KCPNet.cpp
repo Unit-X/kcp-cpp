@@ -293,7 +293,7 @@ int udp_output_server(const char *pBuf, int lSize, ikcpcb *pKCP, void *pCTX) {
 
 void KCPNetServer::udpOutputServer(const char *pBuf, int lSize, KCPServerData *lCTX) {
     if (mDropAll) return;
-    auto[lSentBytes, lStatus] = mKissnetSocket.send((const std::byte *) pBuf, lSize, lCTX->mDestination, lCTX->mDestinationSize);
+    auto[lSentBytes, lStatus] = mKissnetSocket.send((const std::byte *) pBuf, lSize, &lCTX->mDestination);
     if (lSentBytes != lSize || lStatus != kissnet::socket_status::valid) {
         KCP_LOGGER(false, LOGG_NOTIFY, "Server failed sending data")
     }
@@ -411,7 +411,7 @@ void KCPNetServer::sendTimePacket(KCPServerData &rServerData) {
         lTimePacket.correctionActive = 1;
         lTimePacket.correction = rServerData.mCurrentCorrection;
     }
-    auto[lSentBytes, lStatus] = mKissnetSocket.send((const std::byte *) &lTimePacket, sizeof(lTimePacket), rServerData.mDestination, rServerData.mDestinationSize);
+    auto[lSentBytes, lStatus] = mKissnetSocket.send((const std::byte *) &lTimePacket, sizeof(lTimePacket), &rServerData.mDestination);
     if (lSentBytes != sizeof(lTimePacket) || lStatus != kissnet::socket_status::valid) {
         KCP_LOGGER(false, LOGG_NOTIFY, "Server failed sending timing data")
     }
@@ -517,9 +517,10 @@ void KCPNetServer::netWorkerServer(const std::function<void(const char *, size_t
                                                                                    std::shared_ptr<KCPContext> &)> & rValidate) {
     mNetworkThreadRunning = true;
     kissnet::buffer<KCP_MAX_BYTES> receiveBuffer;
+    kissnet::addr_collection receiveConnection;
     char lBuffer[KCP_MAX_BYTES];
     while (true) {
-        auto[received_bytes, status] = mKissnetSocket.recv(receiveBuffer);
+        auto[received_bytes, status] = mKissnetSocket.recv(receiveBuffer,0, &receiveConnection);
         if (!received_bytes || status != kissnet::socket_status::valid) {
             KCP_LOGGER(false, LOGG_NOTIFY, "serverWorker quitting");
             break;
@@ -559,21 +560,7 @@ void KCPNetServer::netWorkerServer(const std::function<void(const char *, size_t
                 throw std::runtime_error("Failed creating KCP");
             }
             lConnection->mKCPServer->output = udp_output_server;
-
-            if (lFromWho.isIPv6) {
-                lConnection->mDestinationV6.sin6_family = AF_INET6;
-                lConnection->mDestinationV6.sin6_port = htons(lFromWho.port);
-                inet_pton(AF_INET6, lFromWho.address.c_str(), &(lConnection->mDestinationV6.sin6_addr));
-                lConnection->mDestination = (sockaddr*)&lConnection->mDestinationV6;
-                lConnection->mDestinationSize = sizeof(lConnection->mDestinationV6);
-
-            } else {
-                lConnection->mDestinationV4.sin_family = AF_INET;
-                lConnection->mDestinationV4.sin_port = htons(lFromWho.port);
-                inet_pton(AF_INET, lFromWho.address.c_str(), &(lConnection->mDestinationV4.sin_addr));
-                lConnection->mDestination = (sockaddr*)&lConnection->mDestinationV4;
-                lConnection->mDestinationSize = sizeof(lConnection->mDestinationV4);
-            }
+            lConnection->mDestination = receiveConnection;
 
             mKCPMap[lKey] = std::move(lConnection);
             mKCPMapMtx.unlock();
