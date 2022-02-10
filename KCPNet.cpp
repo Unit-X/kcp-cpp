@@ -309,7 +309,7 @@ KCPNetServer::~KCPNetServer() {
     mKissnetSocket.shutdown(); // End net thread
     mKissnetSocket.close(); // End net thread
     mNudgeThreadActive = false; // End nudge thread
-    
+
     // Join network thread
     if (mNetworkThreadRunning) {
         lDeadLock = 10;
@@ -451,7 +451,7 @@ void KCPNetServer::kcpNudgeWorkerServer(const std::function<void(KCPContext *)> 
         }
 
         uint32_t lTimeSleepLowest = UINT32_MAX;
-        mKCPMapMtx.lock();
+        std::unique_lock<std::mutex> lock(mKCPMapMtx);
         if (!mKCPMap.empty()) {
             std::vector<uint64_t> lRemoveList;
             //for (const auto &rKCP: mKCPMap) {
@@ -460,9 +460,9 @@ void KCPNetServer::kcpNudgeWorkerServer(const std::function<void(KCPContext *)> 
                 bool lDeleteThis = false;
                 if (ltimeOutFlag) {
                     if (!pKCP->second->mConnectionTimeOut && rDisconnect) {
-                        mKCPMapMtx.unlock();
+                        lock.unlock();
                         rDisconnect(pKCP->second->mKCPContext.get());
-                        mKCPMapMtx.lock();
+                        lock.lock();
                         lDeleteThis = true;
                     }
                     pKCP->second->mConnectionTimeOut--;
@@ -494,7 +494,7 @@ void KCPNetServer::kcpNudgeWorkerServer(const std::function<void(KCPContext *)> 
                 }
             }
         }
-        mKCPMapMtx.unlock();
+        lock.unlock();
         if (lTimeSleepLowest != UINT32_MAX) {
             lTimeSleep = lTimeSleepLowest;
         } else {
@@ -531,7 +531,7 @@ void KCPNetServer::netWorkerServer(const std::function<void(const char *, size_t
         kissnet::endpoint lFromWho = mKissnetSocket.get_recv_endpoint();
         std::string lKey =  lFromWho.address + ":" + std::to_string(lFromWho.port);
 
-        mKCPMapMtx.lock();
+        std::unique_lock<std::mutex> lock(mKCPMapMtx);
         if (!mKCPMap.count(lKey)) {
             KCP_LOGGER(false, LOGG_NOTIFY, "New server connection")
             std::shared_ptr<KCPContext> lx = std::make_shared<KCPContext>(lKey);
@@ -542,13 +542,13 @@ void KCPNetServer::netWorkerServer(const std::function<void(const char *, size_t
             }
 
             if (rValidate) {
-                mKCPMapMtx.unlock();
+                lock.unlock();
                 auto lCTX = rValidate(lFromWho.address, lFromWho.port, lx);
                 if (lCTX == nullptr) {
                     KCP_LOGGER(false, LOGG_NOTIFY, "Connection rejected")
                     continue;
                 }
-                mKCPMapMtx.lock();
+                lock.lock();
             }
 
             // Create the connection and hand RCP the data
@@ -563,16 +563,16 @@ void KCPNetServer::netWorkerServer(const std::function<void(const char *, size_t
             lConnection->mDestination = receiveConnection;
 
             mKCPMap[lKey] = std::move(lConnection);
-            mKCPMapMtx.unlock();
+            lock.unlock();
             configureInternal(lx->mSettings, lx.get());
             if (*(uint64_t *) receiveBuffer.data() == TIME_PREAMBLE_V1) {
                 KCP_LOGGER(false, LOGG_NOTIFY, "server got time do nothing")
                 continue;
             }
-            mKCPMapMtx.lock();
+            lock.lock();
             ikcp_input(mKCPMap[lKey]->mKCPServer, (const char *) receiveBuffer.data(), received_bytes);
             int lRcv = ikcp_recv(mKCPMap[lKey]->mKCPServer, &lBuffer[0], KCP_MAX_BYTES);
-            mKCPMapMtx.unlock();
+            lock.unlock();
             if (lRcv > 0 && rGotData) {
                 rGotData(&lBuffer[0], lRcv, lx.get());
             }
@@ -624,13 +624,13 @@ void KCPNetServer::netWorkerServer(const std::function<void(const char *, size_t
                                                                             << " Compensation -> "
                                                                             << mKCPMap[lKey]->mCurrentCorrection
                 )
-                mKCPMapMtx.unlock();
+                lock.unlock();
                 continue;
             }
             mKCPMap[lKey]->mConnectionTimeOut = HEART_BEAT_TIME_OUT;
             ikcp_input(mKCPMap[lKey]->mKCPServer, (const char *) receiveBuffer.data(), received_bytes);
             int lRcv = ikcp_recv(mKCPMap[lKey]->mKCPServer, &lBuffer[0], KCP_MAX_BYTES);
-            mKCPMapMtx.unlock();
+            lock.unlock();
             if (lRcv > 0 && rGotData) {
                 rGotData(&lBuffer[0], lRcv, mKCPMap[lKey]->mKCPContext.get());
             }
