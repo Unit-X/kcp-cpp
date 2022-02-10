@@ -207,10 +207,11 @@ void KCPNetClient::kcpNudgeWorkerClient(const std::function<void(KCPContext *)> 
             }
             mConnectionTimeOut--;
         }
-        mKCPNetMtx.lock();
-        ikcp_update(mKCP, lTimeNowms);
-        lTimeSleepms = ikcp_check(mKCP, lTimeNowms) - lTimeNowms;
-        mKCPNetMtx.unlock();
+        {
+            std::lock_guard<std::mutex> lock(mKCPNetMtx);
+            ikcp_update(mKCP, lTimeNowms);
+            lTimeSleepms = ikcp_check(mKCP, lTimeNowms) - lTimeNowms;
+        }
         //KCP_LOGGER(false, LOGG_NOTIFY,"dead client? " << mKCP->dead_link)
         //KCP_LOGGER(false, LOGG_NOTIFY,"k " << lTimeSleep << " " << lTimeNow)
     }
@@ -242,28 +243,32 @@ void KCPNetClient::netWorkerClient(const std::function<void(const char *, size_t
                 mCurrentCorrectionTarget = lTimeData->correction;
                 mGotCorrection = true;
             }
-            mKCPNetMtx.lock();
-            int64_t lTimeNow = std::chrono::duration_cast<std::chrono::microseconds>(
-                    std::chrono::steady_clock::now().time_since_epoch()).count();
-            lTimeData->t2 = lTimeNow;
-            lTimeData->t3 = lTimeNow;
-            auto[lSentBytes, lStatus] = mKissnetSocket.send(receiveBuffer, sizeof(KCPTimePacket));
-            if (lSentBytes != sizeof(KCPTimePacket) || lStatus != kissnet::socket_status::valid) {
-                KCP_LOGGER(false, LOGG_NOTIFY, "Client failed sending data")
+
+            {
+                std::lock_guard<std::mutex> lock(mKCPNetMtx);
+                int64_t lTimeNow = std::chrono::duration_cast<std::chrono::microseconds>(
+                        std::chrono::steady_clock::now().time_since_epoch()).count();
+                lTimeData->t2 = lTimeNow;
+                lTimeData->t3 = lTimeNow;
+                auto[lSentBytes, lStatus] = mKissnetSocket.send(receiveBuffer, sizeof(KCPTimePacket));
+                if (lSentBytes != sizeof(KCPTimePacket) || lStatus != kissnet::socket_status::valid) {
+                    KCP_LOGGER(false, LOGG_NOTIFY, "Client failed sending data")
+                }
+                mConnectionTimeOut = HEART_BEAT_TIME_OUT;
             }
-            mConnectionTimeOut = HEART_BEAT_TIME_OUT;
-            mKCPNetMtx.unlock();
             continue;
         }
 
-        mKCPNetMtx.lock();
-        mConnectionTimeOut = HEART_BEAT_TIME_OUT;
-        ikcp_input(mKCP, (const char *) receiveBuffer.data(), received_bytes);
-        int lRcv = ikcp_recv(mKCP, &lBuffer[0], KCP_MAX_BYTES);
-        mKCPNetMtx.unlock();
-        if (lRcv > 0 && rGotData) {
-            rGotData(&lBuffer[0], lRcv, mCTX.get());
-        } // Else deal with code?
+        {
+            std::unique_lock<std::mutex> lock(mKCPNetMtx);
+            mConnectionTimeOut = HEART_BEAT_TIME_OUT;
+            ikcp_input(mKCP, (const char *) receiveBuffer.data(), received_bytes);
+            int lRcv = ikcp_recv(mKCP, &lBuffer[0], KCP_MAX_BYTES);
+            lock.unlock();
+            if (lRcv > 0 && rGotData) {
+                rGotData(&lBuffer[0], lRcv, mCTX.get());
+            } // Else deal with code?
+        }
 
     }
     mNetworkThreadRunning = false;
