@@ -33,7 +33,12 @@ void KCPNetClient::udpOutputClient(const char *pBuf, int lSize) {
     auto[lSentBytes, lStatus] = mKissnetSocket.send((const std::byte *) pBuf, lSize);
     if (lSentBytes != lSize || lStatus != kissnet::socket_status::valid) {
         KCP_LOGGER(false, LOGG_NOTIFY, "Client failed sending data")
+        return;
     }
+#ifdef _WIN32
+    mHasSentData = true;
+#endif
+
 }
 
 KCPNetClient::KCPNetClient() {
@@ -225,6 +230,11 @@ void KCPNetClient::netWorkerClient(const std::function<void(const char *, size_t
     mNetworkThreadRunning = true;
     kissnet::buffer<KCP_MAX_BYTES> receiveBuffer;
     char lBuffer[KCP_MAX_BYTES];
+#ifdef _WIN32
+    do {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    } while (!mHasSentData && mNetworkThreadRunning);
+#endif
     while (true) {
         auto[received_bytes, status] = mKissnetSocket.recv(receiveBuffer);
         if (!received_bytes || status != kissnet::socket_status::valid) {
@@ -309,7 +319,7 @@ KCPNetServer::~KCPNetServer() {
     mKissnetSocket.shutdown(); // End net thread
     mKissnetSocket.close(); // End net thread
     mNudgeThreadActive = false; // End nudge thread
-    
+
     // Join network thread
     if (mNetworkThreadRunning) {
         lDeadLock = 10;
@@ -351,7 +361,7 @@ int KCPNetServer::sendData(const char *pData, size_t lSize, KCPContext *pCTX) {
 int KCPNetServer::configureKCP(const std::function<void(const char *, size_t, KCPContext *)> &rGotData,
                                const std::function<void(KCPContext *)> &rDisconnect,
                                const std::function<std::shared_ptr<KCPContext>(std::string, uint16_t,
-                                                                        std::shared_ptr<KCPContext> &)> &rValidate,
+                                                                               std::shared_ptr<KCPContext> &)> &rValidate,
                                const std::string &lIP,
                                uint16_t lPort,
                                std::shared_ptr<KCPContext> pCTX) {

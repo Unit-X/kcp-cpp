@@ -120,6 +120,9 @@ private:
     void netWorkerClient(const std::function<void(const char*, size_t, KCPContext*)> &rDisconnect);
     void kcpNudgeWorkerClient(const std::function<void(KCPContext*)> &rGotData);
 
+#ifdef _WIN32
+    bool mHasSentData = false;
+#endif
     std::mutex mKCPNetMtx;
     ikcpcb *mKCP = nullptr; // The KCP handle for client mode
     kissnet::udp_socket mKissnetSocket;
@@ -190,7 +193,7 @@ protected:
 private:
     int configureInternal(KCPSettings &rSettings, KCPContext *pCtx);
     void netWorkerServer(const std::function<void(const char*, size_t, KCPContext*)> &rGotData,
-                        const std::function<std::shared_ptr<KCPContext>(std::string, uint16_t, std::shared_ptr<KCPContext>&)> &rValidate);
+                         const std::function<std::shared_ptr<KCPContext>(std::string, uint16_t, std::shared_ptr<KCPContext>&)> &rValidate);
     void kcpNudgeWorkerServer(const std::function<void(KCPContext*)> &rDisconnect);
     void sendTimePacket(KCPServerData &rServerData);
 
